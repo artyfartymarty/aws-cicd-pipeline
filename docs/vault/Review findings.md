@@ -28,6 +28,7 @@ Back to [[00 Home]]. An adversarial review of the code and policies, and what ch
 
 ## Still open, and why
 - **On GitHub Free, anyone with write access can push to `main`.** Since the branching change, prod refuses anything on `main` that isn't a merge from `dev` (`release-sha.sh`), but anyone with write access can still merge into `dev` and open the release PR. Alone in the repo, that's only you. For a team, GitHub Pro/Team (branch protection, CODEOWNERS on `.github/`, required reviewers) closes it.
+- **Bitbucket prod depends on Premium.** Working assumption (2026-10-17): work's workspace has Premium, so deployment permissions limit prod to `main` and admins. Not confirmed. If it turns out to be wrong, `check-prod.sh` in the prod step still blocks non-`main` runs and anyone not in `.bitbucket/PROD_APPROVERS`, but someone who edits `bitbucket-pipelines.yml` on a branch can remove that check.
 - **People with team access can still change prod by hand** in the shared sandbox account. The separation stops pipelines, not people. A separate prod account is the real fix.
 
 Related: [[IAM role chain]], [[Prod release sequence]], [[Sandbox guardrails]].
