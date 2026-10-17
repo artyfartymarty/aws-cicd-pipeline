@@ -1,18 +1,21 @@
-# The self-hosted GitHub Actions runner: one small Graviton EC2 instance.
+# The self-hosted GitHub Actions runner (runner_mode = "ec2" only): one small
+# Graviton EC2 instance.
 # On boot it reads a GitHub token from SSM, asks GitHub for a short-lived
 # registration token, and registers itself to the repo with the labels
 # [self-hosted, linux, ARM64, aws, <project>].
 
 data "aws_ssm_parameter" "al2023_arm64" {
-  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64"
+  count = local.use_runner ? 1 : 0
+  name  = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64"
 }
 
 resource "aws_instance" "runner" {
-  ami                    = data.aws_ssm_parameter.al2023_arm64.value
+  count                  = local.use_runner ? 1 : 0
+  ami                    = data.aws_ssm_parameter.al2023_arm64[0].value
   instance_type          = var.instance_type
-  subnet_id              = aws_subnet.runner.id
-  vpc_security_group_ids = [aws_security_group.runner.id]
-  iam_instance_profile   = aws_iam_instance_profile.runner.name
+  subnet_id              = aws_subnet.runner[0].id
+  vpc_security_group_ids = [aws_security_group.runner[0].id]
+  iam_instance_profile   = aws_iam_instance_profile.runner[0].name
 
   user_data_replace_on_change = true
   user_data = templatefile("${path.module}/runner-user-data.sh.tftpl", {

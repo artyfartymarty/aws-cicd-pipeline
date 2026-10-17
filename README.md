@@ -6,6 +6,21 @@ the same build to Prod), rebuilt on GitHub Actions + one AWS account with
 OpenTofu. It is laid out as a reusable pattern so the Yield team can run dev
 and prod side by side in a single sandbox account.
 
+## Two modes
+
+| | `runner_mode = "ec2"` (default) | `runner_mode = "github-oidc"` |
+|---|---|---|
+| Where jobs run | One Spot EC2 runner in your account | GitHub-hosted runners |
+| How CI gets AWS access | Runner instance role | GitHub OIDC role (no stored keys) |
+| Internet gateway | Yes, for the runner only | None |
+| Lambda | Outside a VPC, or in private subnets (`lambda_in_vpc`) | Private subnets, no internet route |
+| Use it for | Mirroring the work setup in your personal account | The Yield sandbox (see `sandbox-guardrails/`), or the cheapest personal setup |
+| Cost | ~$6.50/month 24/7, ~$1 if stopped when idle | ~$0.25/month |
+
+Both modes use the same role chain: base role -> `<project>-deploy-dev` /
+`<project>-deploy-prod`. Settings for the sandbox are in
+`infra/platform/sandbox.tfvars.example`.
+
 ## How it maps to work
 
 | At work | Here |
@@ -95,14 +110,15 @@ and an empty **private** GitHub repo with this code pushed to it.
    ```bash
    make pat                        # stores it in SSM as a SecureString
    ```
-3. **Platform** (VPC, runner, IAM, artifact bucket)
+   (Skip this step in `github-oidc` mode: there is no runner.)
+3. **Platform** (VPC, runner or OIDC role, IAM, artifact bucket)
    ```bash
    cp infra/platform/terraform.tfvars.example infra/platform/terraform.tfvars   # set github_repo
    make platform-plan              # read it
    make platform-apply
    ```
-   Within a few minutes the runner shows as *Idle* under repo Settings >
-   Actions > Runners.
+   In `ec2` mode the runner shows as *Idle* under repo Settings > Actions >
+   Runners within a few minutes.
 4. **GitHub variables + environments**
    ```bash
    make gh-vars                    # repo vars + dev/prod Environments with their DEPLOY_ROLE_ARN
@@ -172,5 +188,8 @@ Nothing hard-codes an account ID. To stand it up in the sandbox:
 - Mark the pattern repo as a GitHub *template repository* to play the Autobahn
   scaffolder role ("Use this template" creates a new repo with the pipeline wired).
 - Required reviewers on the `prod` Environment, if the repo is on a paid plan.
-- Swap the runner to GitHub-hosted + GitHub OIDC for the base role, if you'd
-  rather not run any EC2 at all.
+- In the sandbox, the account boundary (`yield-boundary`) replaces the per-env
+  app boundaries, so dev and prod are separated by the deploy roles' scopes
+  rather than by two boundaries. Ask IT for per-env boundaries if that matters.
+- Interface VPC endpoints (SSM, Secrets Manager, etc.) for Lambdas that need
+  them. They cost about $7/month each per AZ, so none are created by default.

@@ -17,4 +17,6 @@ module "app" {
   permissions_boundary_arn = var.app_boundary_arn
   deletion_protection      = var.env == "prod"
   memory_mb                = var.memory_mb
+  subnet_ids               = var.lambda_subnet_ids
+  security_group_ids       = var.lambda_security_group_ids
 }

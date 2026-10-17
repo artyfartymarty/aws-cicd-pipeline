@@ -25,7 +25,7 @@ account ID before use.
 ## What the team CANNOT do
 
 - Create or attach internet gateways, egress-only gateways, NAT gateways, or carrier gateways.
-- Give anything a public IP (Elastic IPs, public IPs on launch, public-by-default subnets).
+- Allocate Elastic IPs or launch instances with a public IP.
 - Connect the VPCs to anything outside the account: VPN, peering, Transit Gateway, Client VPN.
 - Run a Lambda outside a VPC (a non-VPC Lambda has internet access by default),
   or expose a Lambda URL without authentication.
@@ -54,8 +54,9 @@ account ID before use.
   CodeBuild without a VPC, or Glue jobs). If the rule is strictly "no outbound
   internet from anything", list the services the team plans to use and IT can
   add a deny or VPC condition for each.
-- `ec2:ModifySubnetAttribute` is fully denied, because it is how a subnet gets
-  public IPs by default. Subnets created by OpenTofu with default settings work fine.
+- Subnets can still be set to hand out public IPs (blocking that also breaks
+  normal subnet changes). It is harmless here: with no internet gateway, a
+  public IP has no route anywhere.
 
 ## Effect on the pipeline in this repo
 

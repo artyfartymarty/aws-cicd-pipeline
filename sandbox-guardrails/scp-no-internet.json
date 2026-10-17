@@ -14,7 +14,6 @@
         "ec2:CreateDefaultSubnet",
         "ec2:AllocateAddress",
         "ec2:AssociateAddress",
-        "ec2:ModifySubnetAttribute",
         "ec2:CreateVpnGateway",
         "ec2:AttachVpnGateway",
         "ec2:CreateCustomerGateway",
@@ -36,25 +35,37 @@
       "Action": "ec2:RunInstances",
       "Resource": "arn:aws:ec2:*:*:network-interface/*",
       "Condition": {
-        "Bool": { "ec2:AssociatePublicIpAddress": "true" }
+        "Bool": {
+          "ec2:AssociatePublicIpAddress": "true"
+        }
       }
     },
     {
       "Sid": "LambdaMustRunInAVpc",
       "Effect": "Deny",
-      "Action": ["lambda:CreateFunction", "lambda:UpdateFunctionConfiguration"],
+      "Action": [
+        "lambda:CreateFunction",
+        "lambda:UpdateFunctionConfiguration"
+      ],
       "Resource": "*",
       "Condition": {
-        "Null": { "lambda:VpcIds": "true" }
+        "Null": {
+          "lambda:VpcIds": "true"
+        }
       }
     },
     {
       "Sid": "NoPublicLambdaUrls",
       "Effect": "Deny",
-      "Action": ["lambda:CreateFunctionUrlConfig", "lambda:UpdateFunctionUrlConfig"],
+      "Action": [
+        "lambda:CreateFunctionUrlConfig",
+        "lambda:UpdateFunctionUrlConfig"
+      ],
       "Resource": "*",
       "Condition": {
-        "StringEquals": { "lambda:FunctionUrlAuthType": "NONE" }
+        "StringEquals": {
+          "lambda:FunctionUrlAuthType": "NONE"
+        }
       }
     },
     {
@@ -63,19 +74,28 @@
       "Action": "sagemaker:CreateNotebookInstance",
       "Resource": "*",
       "Condition": {
-        "StringEquals": { "sagemaker:DirectInternetAccess": "Enabled" }
+        "StringEquals": {
+          "sagemaker:DirectInternetAccess": "Enabled"
+        }
       }
     },
     {
       "Sid": "KeepS3PublicAccessBlocked",
       "Effect": "Deny",
-      "Action": ["s3:PutAccountPublicAccessBlock", "s3:DeleteAccountPublicAccessBlock"],
+      "Action": [
+        "s3:PutAccountPublicAccessBlock",
+        "s3:DeleteAccountPublicAccessBlock"
+      ],
       "Resource": "*"
     },
     {
       "Sid": "NoLongLivedKeysOrUsers",
       "Effect": "Deny",
-      "Action": ["iam:CreateUser", "iam:CreateAccessKey", "iam:CreateLoginProfile"],
+      "Action": [
+        "iam:CreateUser",
+        "iam:CreateAccessKey",
+        "iam:CreateLoginProfile"
+      ],
       "Resource": "*"
     }
   ]

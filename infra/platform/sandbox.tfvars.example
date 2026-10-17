@@ -1,0 +1,9 @@
+# Yield sandbox: no internet gateway, no runner. CI runs on GitHub-hosted
+# runners and signs in with OIDC; Lambdas run in private subnets.
+#   cp infra/platform/sandbox.tfvars.example infra/platform/terraform.tfvars
+project                      = "yield"
+github_repo                  = "<owner>/<repo>"
+runner_mode                  = "github-oidc"
+lambda_in_vpc                = true
+org_permissions_boundary_arn = "arn:aws:iam::<SANDBOX_ACCOUNT_ID>:policy/yield-boundary"
+# create_oidc_provider       = false   # if IT already created the GitHub OIDC provider

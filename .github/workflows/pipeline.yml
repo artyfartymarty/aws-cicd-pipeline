@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write # only used in OIDC mode
 
 concurrency:
   group: main-pipeline

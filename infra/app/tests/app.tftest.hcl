@@ -4,6 +4,9 @@ mock_provider "aws" {
   mock_data "aws_iam_policy_document" {
     defaults = { json = "{\"Version\":\"2012-10-17\",\"Statement\":[]}" }
   }
+  mock_data "aws_partition" {
+    defaults = { partition = "aws" }
+  }
   mock_resource "aws_iam_role" {
     defaults = { arn = "arn:aws:iam::111111111111:role/cicd-lab-dev-app" }
   }
@@ -68,4 +71,16 @@ run "rejects_short_sha" {
     build_sha = "abc123"
   }
   expect_failures = [var.build_sha]
+}
+
+run "sandbox_lambda_runs_in_private_subnets" {
+  command = plan
+  variables {
+    lambda_subnet_ids         = ["subnet-aaa", "subnet-bbb"]
+    lambda_security_group_ids = ["sg-123"]
+  }
+  assert {
+    condition     = module.app.in_vpc
+    error_message = "Lambda must be attached to the private subnets when they are given."
+  }
 }

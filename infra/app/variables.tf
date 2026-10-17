@@ -40,3 +40,14 @@ variable "memory_mb" {
   type        = number
   default     = 128
 }
+
+variable "lambda_subnet_ids" {
+  description = "Private subnets for the Lambda (LAMBDA_SUBNET_IDS env variable). Empty = not in a VPC."
+  type        = list(string)
+  default     = []
+}
+
+variable "lambda_security_group_ids" {
+  type    = list(string)
+  default = []
+}

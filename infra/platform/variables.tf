@@ -42,3 +42,40 @@ variable "environments" {
   type        = list(string)
   default     = ["dev", "prod"]
 }
+
+variable "runner_mode" {
+  description = <<-EOT
+    How CI reaches AWS.
+      "ec2"         - a self-hosted runner EC2 in this account (needs an internet gateway).
+      "github-oidc" - GitHub-hosted runners sign in with OIDC; nothing runs in the account
+                      and no internet gateway is created. Use this in the Yield sandbox.
+  EOT
+  type        = string
+  default     = "ec2"
+  validation {
+    condition     = contains(["ec2", "github-oidc"], var.runner_mode)
+    error_message = "runner_mode must be ec2 or github-oidc."
+  }
+}
+
+variable "create_oidc_provider" {
+  description = "Create the GitHub OIDC provider. Set false if the account already has one (only one per account)."
+  type        = bool
+  default     = true
+}
+
+variable "org_permissions_boundary_arn" {
+  description = <<-EOT
+    Boundary the account forces on every new role (the sandbox's yield-boundary).
+    When set, every role this stack and the pipeline create carries it, and the
+    per-env app boundaries are skipped (app roles carry this one instead).
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "lambda_in_vpc" {
+  description = "Run app Lambdas in the private subnets (required where the account forbids non-VPC Lambdas, as the Yield sandbox does)."
+  type        = bool
+  default     = false
+}

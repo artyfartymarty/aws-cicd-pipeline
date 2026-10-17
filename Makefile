@@ -56,7 +56,7 @@ platform-apply: platform-init ## Create/update them (asks for confirmation)
 
 gh-vars: ## Create dev/prod GitHub Environments and set repo + per-env variables (needs gh CLI, run inside the repo)
 	@$(TOFU_PLATFORM) output -json github_variables | \
-	  python3 -c 'import json,sys;[print(k,v) for k,v in json.load(sys.stdin).items()]' | \
+	  python3 -c 'import json,sys;[print(k,v) for k,v in json.load(sys.stdin).items() if v]' | \
 	  while read -r k v; do gh variable set "$$k" --body "$$v"; done
 	@$(TOFU_PLATFORM) output -json github_environment_variables | \
 	  python3 -c 'import json,sys;[print(e,k,v) for e,d in json.load(sys.stdin).items() for k,v in d.items()]' | \

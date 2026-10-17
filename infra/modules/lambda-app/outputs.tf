@@ -21,3 +21,7 @@ output "permissions_boundary" {
 output "deletion_protection" {
   value = aws_dynamodb_table.items.deletion_protection_enabled
 }
+
+output "in_vpc" {
+  value = length(var.subnet_ids) > 0
+}

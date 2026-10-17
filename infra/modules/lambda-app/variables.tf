@@ -37,3 +37,14 @@ variable "log_retention_days" {
   type    = number
   default = 7
 }
+
+variable "subnet_ids" {
+  description = "Private subnets to run in. Empty = no VPC (not allowed in the Yield sandbox)."
+  type        = list(string)
+  default     = []
+}
+
+variable "security_group_ids" {
+  type    = list(string)
+  default = []
+}

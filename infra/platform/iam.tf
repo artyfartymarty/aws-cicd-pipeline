@@ -1,8 +1,9 @@
 # Two layers of IAM, so dev and prod are separated inside ONE AWS account
 # (the same shape the team sandbox account will use):
 #
-#   runner role (instance profile)   can only: register the runner, write build
-#        |                           artifacts, and assume a deploy role.
+#   base role                        can only: write build artifacts and assume a
+#     (runner instance role, or      deploy role (+ read the runner's GitHub token
+#      the GitHub OIDC role)         in ec2 mode).
 #        +--> <project>-deploy-dev   manages only <project>-dev-* resources and
 #        |                           the app/dev.tfstate state file.
 #        +--> <project>-deploy-prod  manages only <project>-prod-* resources and
@@ -21,7 +22,19 @@ locals {
   envs      = toset(var.environments)
 }
 
-# --- Runner (base) role ------------------------------------------------------
+# --- Base role: the self-hosted runner's instance role, or the GitHub OIDC role
+
+locals {
+  use_oidc      = var.runner_mode == "github-oidc"
+  org_boundary  = var.org_permissions_boundary_arn != "" ? var.org_permissions_boundary_arn : null
+  base_role_arn = local.use_runner ? aws_iam_role.runner[0].arn : aws_iam_role.ci[0].arn
+  base_role_id  = local.use_runner ? aws_iam_role.runner[0].id : aws_iam_role.ci[0].id
+  # Boundary each env's app roles must carry: the org one if the account forces
+  # one, otherwise a per-env boundary created below.
+  app_boundary_arn = {
+    for e in local.envs : e => local.org_boundary != null ? local.org_boundary : aws_iam_policy.app_boundary[e].arn
+  }
+}
 
 data "aws_iam_policy_document" "ec2_assume" {
   statement {
@@ -34,35 +47,86 @@ data "aws_iam_policy_document" "ec2_assume" {
 }
 
 resource "aws_iam_role" "runner" {
-  name               = "${var.project}-runner"
-  assume_role_policy = data.aws_iam_policy_document.ec2_assume.json
+  count                = local.use_runner ? 1 : 0
+  name                 = "${var.project}-runner"
+  assume_role_policy   = data.aws_iam_policy_document.ec2_assume.json
+  permissions_boundary = local.org_boundary
 }
 
 resource "aws_iam_instance_profile" "runner" {
-  name = "${var.project}-runner"
-  role = aws_iam_role.runner.name
+  count = local.use_runner ? 1 : 0
+  name  = "${var.project}-runner"
+  role  = aws_iam_role.runner[0].name
 }
 
 # Lets you open a shell with `aws ssm start-session` instead of SSH.
 resource "aws_iam_role_policy_attachment" "ssm" {
-  role       = aws_iam_role.runner.name
+  count      = local.use_runner ? 1 : 0
+  role       = aws_iam_role.runner[0].name
   policy_arn = "${local.arn_pfx}:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-data "aws_iam_policy_document" "runner" {
+# GitHub OIDC: short-lived credentials for workflows in github_repo only.
+resource "aws_iam_openid_connect_provider" "github" {
+  count          = local.use_oidc && var.create_oidc_provider ? 1 : 0
+  url            = "https://token.actions.githubusercontent.com"
+  client_id_list = ["sts.amazonaws.com"]
+}
+
+data "aws_iam_openid_connect_provider" "github" {
+  count = local.use_oidc && !var.create_oidc_provider ? 1 : 0
+  url   = "https://token.actions.githubusercontent.com"
+}
+
+data "aws_iam_policy_document" "github_assume" {
+  count = local.use_oidc ? 1 : 0
   statement {
-    sid       = "GithubPat"
-    actions   = ["ssm:GetParameter"]
-    resources = ["${local.arn_pfx}:ssm:${var.region}:${local.account}:parameter/${var.project}/github-pat"]
-  }
-  statement {
-    sid       = "DecryptPatViaSsm"
-    actions   = ["kms:Decrypt"]
-    resources = ["*"]
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[*].arn : data.aws_iam_openid_connect_provider.github[*].arn
+    }
     condition {
       test     = "StringEquals"
-      variable = "kms:ViaService"
-      values   = ["ssm.${var.region}.amazonaws.com"]
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${var.github_repo}:*"]
+    }
+  }
+}
+
+resource "aws_iam_role" "ci" {
+  count                = local.use_oidc ? 1 : 0
+  name                 = "${var.project}-ci"
+  assume_role_policy   = data.aws_iam_policy_document.github_assume[0].json
+  permissions_boundary = local.org_boundary
+  max_session_duration = 3600
+}
+
+data "aws_iam_policy_document" "base" {
+  dynamic "statement" {
+    for_each = local.use_runner ? [1] : []
+    content {
+      sid       = "GithubPat"
+      actions   = ["ssm:GetParameter"]
+      resources = ["${local.arn_pfx}:ssm:${var.region}:${local.account}:parameter/${var.project}/github-pat"]
+    }
+  }
+  dynamic "statement" {
+    for_each = local.use_runner ? [1] : []
+    content {
+      sid       = "DecryptPatViaSsm"
+      actions   = ["kms:Decrypt"]
+      resources = ["*"]
+      condition {
+        test     = "StringEquals"
+        variable = "kms:ViaService"
+        values   = ["ssm.${var.region}.amazonaws.com"]
+      }
     }
   }
   statement {
@@ -82,16 +146,17 @@ data "aws_iam_policy_document" "runner" {
   }
 }
 
-resource "aws_iam_role_policy" "runner" {
-  name   = "${var.project}-runner-scoped"
-  role   = aws_iam_role.runner.id
-  policy = data.aws_iam_policy_document.runner.json
+resource "aws_iam_role_policy" "base" {
+  name   = "${var.project}-base-scoped"
+  role   = local.base_role_id
+  policy = data.aws_iam_policy_document.base.json
 }
 
 # --- Per-environment permissions boundary for app roles ---------------------
+# Skipped when the account forces its own boundary (org_permissions_boundary_arn).
 
 data "aws_iam_policy_document" "app_boundary" {
-  for_each = local.envs
+  for_each = local.org_boundary == null ? local.envs : toset([])
 
   statement {
     sid       = "OwnLogs"
@@ -106,10 +171,18 @@ data "aws_iam_policy_document" "app_boundary" {
     ]
     resources = ["${local.arn_pfx}:dynamodb:${var.region}:${local.account}:table/${var.project}-${each.key}-*"]
   }
+  statement {
+    sid = "LambdaInVpcNetworking"
+    actions = [
+      "ec2:CreateNetworkInterface", "ec2:DescribeNetworkInterfaces", "ec2:DescribeSubnets",
+      "ec2:DeleteNetworkInterface", "ec2:AssignPrivateIpAddresses", "ec2:UnassignPrivateIpAddresses",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_policy" "app_boundary" {
-  for_each = local.envs
+  for_each = local.org_boundary == null ? local.envs : toset([])
   name     = "${var.project}-${each.key}-app-boundary"
   policy   = data.aws_iam_policy_document.app_boundary[each.key].json
 }
@@ -121,7 +194,7 @@ data "aws_iam_policy_document" "deploy_assume" {
     actions = ["sts:AssumeRole"]
     principals {
       type        = "AWS"
-      identifiers = [aws_iam_role.runner.arn]
+      identifiers = [local.base_role_arn]
     }
   }
 }
@@ -130,6 +203,7 @@ resource "aws_iam_role" "deploy" {
   for_each             = local.envs
   name                 = "${var.project}-deploy-${each.key}"
   assume_role_policy   = data.aws_iam_policy_document.deploy_assume.json
+  permissions_boundary = local.org_boundary
   max_session_duration = 3600
 }
 
@@ -186,6 +260,11 @@ data "aws_iam_policy_document" "deploy" {
     actions   = ["logs:DescribeLogGroups"]
     resources = ["*"]
   }
+  statement {
+    sid       = "LambdaVpcLookups"
+    actions   = ["ec2:DescribeSecurityGroups", "ec2:DescribeSubnets", "ec2:DescribeVpcs", "ec2:DescribeNetworkInterfaces"]
+    resources = ["*"]
+  }
 
   statement {
     sid = "AppRolesWithBoundary"
@@ -197,7 +276,7 @@ data "aws_iam_policy_document" "deploy" {
     condition {
       test     = "StringEquals"
       variable = "iam:PermissionsBoundary"
-      values   = [aws_iam_policy.app_boundary[each.key].arn]
+      values   = [local.app_boundary_arn[each.key]]
     }
   }
   statement {

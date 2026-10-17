@@ -11,10 +11,11 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   build:
-    runs-on: [self-hosted, aws]
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '["self-hosted","aws"]') }}
     outputs:
       build_sha: ${{ steps.meta.outputs.sha }}
     env:
@@ -22,6 +23,14 @@ jobs:
       ARTIFACT_BUCKET: ${{ vars.ARTIFACT_BUCKET }}
     steps:
       - uses: actions/checkout@v4
+      # OIDC mode (Yield sandbox): GitHub-hosted runner signs in as the base CI role.
+      # In ec2 mode AWS_CI_ROLE_ARN is unset and the runner's instance role is used.
+      - name: Sign in to AWS with OIDC
+        if: vars.AWS_CI_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_CI_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
       - id: meta
         run: echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
       - name: Package and upload

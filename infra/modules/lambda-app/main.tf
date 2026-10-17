@@ -47,6 +47,15 @@ data "aws_iam_policy_document" "app" {
   }
 }
 
+# Lets Lambda create its network interfaces in the private subnets.
+resource "aws_iam_role_policy_attachment" "vpc" {
+  count      = length(var.subnet_ids) > 0 ? 1 : 0
+  role       = aws_iam_role.app.name
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+}
+
+data "aws_partition" "current" {}
+
 resource "aws_iam_role_policy" "app" {
   name   = "app"
   role   = aws_iam_role.app.id
@@ -79,5 +88,13 @@ resource "aws_lambda_function" "app" {
     }
   }
 
-  depends_on = [aws_cloudwatch_log_group.app, aws_iam_role_policy.app]
+  dynamic "vpc_config" {
+    for_each = length(var.subnet_ids) > 0 ? [1] : []
+    content {
+      subnet_ids         = var.subnet_ids
+      security_group_ids = var.security_group_ids
+    }
+  }
+
+  depends_on = [aws_cloudwatch_log_group.app, aws_iam_role_policy.app, aws_iam_role_policy_attachment.vpc]
 }
