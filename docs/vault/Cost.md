@@ -26,7 +26,7 @@ pie showData
 |---|---|
 | `ec2`, runner always on | ~$6.50 |
 | `ec2`, runner stopped when idle | ~$1 |
-| `github-oidc` | ~$0.25 |
+| `github-oidc` or `bitbucket-oidc` | ~$0.25 |
 
 Things deliberately not used: EKS control plane (~$73), NAT gateway (~$33), Transit Gateway attachment (~$36), JFrog cloud (~$150+ per Vendr's estimate), interface endpoints (~$7 each per AZ).
 

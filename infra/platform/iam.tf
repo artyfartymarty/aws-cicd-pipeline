@@ -3,17 +3,23 @@
 #
 #   non-prod base role                  can: publish build artifacts, read
 #     (runner instance role in ec2 mode, non-prod config, assume non-prod
-#      or <project>-ci via GitHub OIDC)  deploy roles. Never prod.
+#      or <project>-ci via CI OIDC)      deploy roles. Never prod.
 #        +--> <project>-deploy-dev      manages only <project>-dev-* resources
 #                                       and app/dev.tfstate
 #
-#   prod base role <project>-ci-prod    GitHub OIDC, trusted ONLY for workflows
-#     (both modes)                       running on refs/heads/main. Can read
-#                                        artifacts and prod config, assume the
-#        +--> <project>-deploy-prod      prod deploy role. Cannot publish builds.
+#   prod base role <project>-ci-prod    CI OIDC, trusted ONLY for prod runs:
+#     (every mode)                       GitHub jobs on refs/heads/main, or
+#                                        Bitbucket steps in the prod deployment
+#                                        environment. Can read artifacts and
+#        +--> <project>-deploy-prod      prod config, assume the prod deploy
+#                                        role. Cannot publish builds.
 #
 # The self-hosted runner never holds prod-capable credentials: prod jobs always
-# run on GitHub-hosted runners with the main-only OIDC role.
+# run on hosted runners with the prod-only OIDC role.
+#
+# CI providers: GitHub Actions (runner_mode ec2 / github-oidc, my account) or
+# Bitbucket Pipelines (bitbucket-oidc, work). Only the OIDC issuer and the
+# claims the trust policies match on differ; every role below is the same.
 #
 # Deploy roles may create IAM roles only if they carry that env's boundary, so a
 # pipeline run can never mint a role that reaches another env.
@@ -29,7 +35,8 @@ locals {
   prod_envs = toset([for e in var.environments : e if contains(var.prod_environments, e)])
   nonprod   = setsubtract(local.envs, local.prod_envs)
 
-  use_oidc     = var.runner_mode == "github-oidc"
+  use_oidc     = var.runner_mode != "ec2"
+  bitbucket    = var.runner_mode == "bitbucket-oidc"
   org_boundary = var.org_permissions_boundary_arn != "" ? var.org_permissions_boundary_arn : null
 
   # Boundary carried by each env's deploy role and every role it creates: one
@@ -41,20 +48,39 @@ locals {
   nonprod_base_arn = local.use_runner ? aws_iam_role.runner[0].arn : aws_iam_role.ci[0].arn
   nonprod_base_id  = local.use_runner ? aws_iam_role.runner[0].id : aws_iam_role.ci[0].id
 
-  oidc_provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.github[0].arn
+  oidc_provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.ci[0].arn : data.aws_iam_openid_connect_provider.ci[0].arn
+
+  # What the trust policies match on, per CI provider.
+  #   GitHub:    sub = repo:<owner>/<repo>:ref:refs/heads/<branch>
+  #   Bitbucket: sub = {repo-uuid}[:{deployment-env-uuid}]:{step-uuid}
+  # AWS can only match aud and sub for these issuers, so Bitbucket cannot be
+  # limited to a branch here: the prod deployment environment is the gate, and
+  # Bitbucket's deployment permissions limit that environment to main.
+  oidc_host     = local.bitbucket ? trimprefix(var.bitbucket_oidc_url, "https://") : "token.actions.githubusercontent.com"
+  oidc_aud      = local.bitbucket ? var.bitbucket_oidc_audience : "sts.amazonaws.com"
+  nonprod_subs  = local.bitbucket ? ["${var.bitbucket_repo_uuid}:*"] : ["repo:${var.github_repo}:*"]
+  prod_sub_test = local.bitbucket ? "StringLike" : "StringEquals"
+  prod_subs = local.bitbucket ? [
+    for e in local.prod_envs : "${var.bitbucket_repo_uuid}:${lookup(var.bitbucket_deployment_uuids, e, "")}:*"
+  ] : ["repo:${var.github_repo}:ref:refs/heads/main"]
 }
 
-# --- GitHub OIDC provider (always: prod always deploys through OIDC) ---------
+# --- CI OIDC provider (always: prod always deploys through OIDC) -------------
 
-resource "aws_iam_openid_connect_provider" "github" {
+resource "aws_iam_openid_connect_provider" "ci" {
   count          = var.create_oidc_provider ? 1 : 0
-  url            = "https://token.actions.githubusercontent.com"
-  client_id_list = ["sts.amazonaws.com"]
+  url            = "https://${local.oidc_host}"
+  client_id_list = [local.oidc_aud]
 }
 
-data "aws_iam_openid_connect_provider" "github" {
+data "aws_iam_openid_connect_provider" "ci" {
   count = var.create_oidc_provider ? 0 : 1
-  url   = "https://token.actions.githubusercontent.com"
+  url   = "https://${local.oidc_host}"
+}
+
+moved {
+  from = aws_iam_openid_connect_provider.github
+  to   = aws_iam_openid_connect_provider.ci
 }
 
 # --- Non-prod base role: runner (ec2 mode) ----------------------------------
@@ -89,9 +115,9 @@ resource "aws_iam_role_policy_attachment" "ssm" {
   policy_arn = "${local.arn_pfx}:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-# --- Non-prod base role: GitHub OIDC, any branch (github-oidc mode) ---------
+# --- Non-prod base role: CI OIDC, any branch (github-oidc / bitbucket-oidc) --
 
-data "aws_iam_policy_document" "github_any_ref" {
+data "aws_iam_policy_document" "ci_any_ref" {
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
     principals {
@@ -100,13 +126,13 @@ data "aws_iam_policy_document" "github_any_ref" {
     }
     condition {
       test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:aud"
-      values   = ["sts.amazonaws.com"]
+      variable = "${local.oidc_host}:aud"
+      values   = [local.oidc_aud]
     }
     condition {
       test     = "StringLike"
-      variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:*"]
+      variable = "${local.oidc_host}:sub"
+      values   = local.nonprod_subs
     }
   }
 }
@@ -114,7 +140,7 @@ data "aws_iam_policy_document" "github_any_ref" {
 resource "aws_iam_role" "ci" {
   count                = local.use_oidc ? 1 : 0
   name                 = "${var.project}-ci"
-  assume_role_policy   = data.aws_iam_policy_document.github_any_ref.json
+  assume_role_policy   = data.aws_iam_policy_document.ci_any_ref.json
   permissions_boundary = local.org_boundary
   max_session_duration = 3600
 }
@@ -171,13 +197,16 @@ resource "aws_iam_role_policy" "nonprod_base" {
   policy = data.aws_iam_policy_document.nonprod_base.json
 }
 
-# --- Prod base role: GitHub OIDC, main branch only (both modes) -------------
-# The sub claim is "repo:<owner>/<repo>:ref:refs/heads/main" only for jobs on
+# --- Prod base role: CI OIDC, prod runs only (every mode) --------------------
+# GitHub: the sub is "repo:<owner>/<repo>:ref:refs/heads/main" only for jobs on
 # main that do NOT declare a GitHub `environment:` (that would change the sub).
 # A workflow edited on another branch gets a different sub and is refused here,
 # whatever its YAML says.
+# Bitbucket: only steps with `deployment: prod` carry the prod environment's
+# UUID in their sub. Which branches may use that environment is set in
+# Bitbucket (Repository settings > Deployments > prod), not here.
 
-data "aws_iam_policy_document" "github_main_only" {
+data "aws_iam_policy_document" "ci_prod_only" {
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
     principals {
@@ -186,22 +215,36 @@ data "aws_iam_policy_document" "github_main_only" {
     }
     condition {
       test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:aud"
-      values   = ["sts.amazonaws.com"]
+      variable = "${local.oidc_host}:aud"
+      values   = [local.oidc_aud]
     }
     condition {
-      test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:ref:refs/heads/main"]
+      test     = local.prod_sub_test
+      variable = "${local.oidc_host}:sub"
+      values   = local.prod_subs
     }
   }
 }
 
 resource "aws_iam_role" "ci_prod" {
   name                 = "${var.project}-ci-prod"
-  assume_role_policy   = data.aws_iam_policy_document.github_main_only.json
+  assume_role_policy   = data.aws_iam_policy_document.ci_prod_only.json
   permissions_boundary = local.org_boundary
   max_session_duration = 3600
+
+  lifecycle {
+    precondition {
+      condition     = local.bitbucket || can(regex("^[^/]+/[^/]+$", var.github_repo))
+      error_message = "Set github_repo to owner/name for runner_mode ec2 or github-oidc."
+    }
+    precondition {
+      condition = !local.bitbucket || (
+        var.bitbucket_oidc_url != "" && var.bitbucket_oidc_audience != "" && var.bitbucket_repo_uuid != "" &&
+        alltrue([for e in local.prod_envs : can(regex("^\\{[0-9a-f-]{36}\\}$", lookup(var.bitbucket_deployment_uuids, e, "")))])
+      )
+      error_message = "bitbucket-oidc needs bitbucket_oidc_url, bitbucket_oidc_audience, bitbucket_repo_uuid and a bitbucket_deployment_uuids entry for every prod env."
+    }
+  }
 }
 
 data "aws_iam_policy_document" "prod_base" {

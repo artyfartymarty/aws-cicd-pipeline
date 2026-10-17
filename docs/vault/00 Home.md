@@ -7,7 +7,9 @@ Open this folder (`docs/vault`) as an Obsidian vault. Diagrams are Mermaid, whic
 
 ## Start here
 - [[Work pattern]]: what the company runs today, from the Rovo answers and the Autobahn diagrams
-- [[My pattern]]: what this repo builds
+- [[My pattern]]: the pattern **here**: GitHub Actions + my AWS account
+- [[Yield work pattern]]: the pattern **at work**: Bitbucket Pipelines + the Yield sandbox
+- [[Local to work]]: how the pattern here translates to the pattern at work
 - [[Mapping]]: work vs mine, component by component, and what's missing
 - [[Runners]]: why there are two runner modes, and which one matches work
 

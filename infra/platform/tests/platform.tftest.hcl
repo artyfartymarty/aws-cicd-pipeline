@@ -128,7 +128,7 @@ run "oidc_trusts_only_this_repo" {
     runner_mode = "github-oidc"
   }
   assert {
-    condition     = output.github_variables.RUNS_ON == "\"ubuntu-latest\""
+    condition     = output.ci_variables.RUNS_ON == "\"ubuntu-latest\""
     error_message = "OIDC mode should run on GitHub-hosted runners."
   }
 }
@@ -162,7 +162,7 @@ run "runner_can_never_reach_prod" {
   }
   assert {
     condition = one([
-      for c in one(data.aws_iam_policy_document.github_main_only.statement).condition : c.values if c.variable == "token.actions.githubusercontent.com:sub"
+      for c in one(data.aws_iam_policy_document.ci_prod_only.statement).condition : c.values if c.variable == "token.actions.githubusercontent.com:sub"
     ]) == tolist(["repo:artyfartymarty/aws-cicd-pipeline:ref:refs/heads/main"])
     error_message = "Prod OIDC role must be limited to the main branch."
   }
@@ -170,4 +170,60 @@ run "runner_can_never_reach_prod" {
     condition     = aws_ssm_parameter.env_config["prod"].name == "/cicd-lab/env/prod/config"
     error_message = "Per-env config must be in SSM."
   }
+}
+
+# Work pattern: Bitbucket Pipelines OIDC instead of GitHub.
+run "bitbucket_mode_trusts_only_this_repo_and_prod_environment" {
+  command = plan
+  variables {
+    github_repo             = ""
+    runner_mode             = "bitbucket-oidc"
+    lambda_in_vpc           = true
+    bitbucket_oidc_url      = "https://api.bitbucket.org/2.0/workspaces/acme/pipelines-config/identity/oidc"
+    bitbucket_oidc_audience = "ari:cloud:bitbucket::workspace/11111111-2222-3333-4444-555555555555"
+    bitbucket_repo_uuid     = "{aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee}"
+    bitbucket_deployment_uuids = {
+      dev  = "{00000000-0000-0000-0000-00000000000d}"
+      prod = "{00000000-0000-0000-0000-00000000000f}"
+    }
+  }
+
+  assert {
+    condition     = length(aws_internet_gateway.this) == 0 && length(aws_instance.runner) == 0
+    error_message = "Bitbucket mode must not create an internet gateway or a runner."
+  }
+  assert {
+    condition     = aws_iam_openid_connect_provider.ci[0].url == "https://api.bitbucket.org/2.0/workspaces/acme/pipelines-config/identity/oidc"
+    error_message = "The OIDC provider must be the workspace's Bitbucket issuer."
+  }
+  assert {
+    condition = one([
+      for c in one(data.aws_iam_policy_document.ci_prod_only.statement).condition : c.values
+      if c.variable == "api.bitbucket.org/2.0/workspaces/acme/pipelines-config/identity/oidc:sub"
+    ]) == tolist(["{aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee}:{00000000-0000-0000-0000-00000000000f}:*"])
+    error_message = "Prod role must trust only steps in the prod deployment environment of this repo."
+  }
+  assert {
+    condition = one([
+      for c in one(data.aws_iam_policy_document.ci_any_ref.statement).condition : c.values
+      if c.variable == "api.bitbucket.org/2.0/workspaces/acme/pipelines-config/identity/oidc:sub"
+    ]) == tolist(["{aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee}:*"])
+    error_message = "Non-prod role must trust only this repo."
+  }
+  assert {
+    condition     = output.ci_variables.RUNS_ON == ""
+    error_message = "RUNS_ON is a GitHub-only variable."
+  }
+}
+
+run "bitbucket_mode_refuses_missing_prod_environment" {
+  command = plan
+  variables {
+    github_repo             = ""
+    runner_mode             = "bitbucket-oidc"
+    bitbucket_oidc_url      = "https://api.bitbucket.org/2.0/workspaces/acme/pipelines-config/identity/oidc"
+    bitbucket_oidc_audience = "ari:cloud:bitbucket::workspace/11111111-2222-3333-4444-555555555555"
+    bitbucket_repo_uuid     = "{aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee}"
+  }
+  expect_failures = [aws_iam_role.ci_prod]
 }

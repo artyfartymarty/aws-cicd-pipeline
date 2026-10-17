@@ -33,16 +33,12 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
       - id: meta
         run: echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      # Same script as bitbucket-pipelines.yml.
       - name: Package and upload
-        run: |
-          KEY="builds/$GITHUB_SHA/app.zip"
-          if aws s3api head-object --bucket "$ARTIFACT_BUCKET" --key "$KEY" >/dev/null 2>&1; then
-            echo "Build $GITHUB_SHA already exists, reusing it."
-            exit 0
-          fi
-          mkdir -p dist
-          (cd app/src && zip -qr -X ../../dist/app.zip . -x '__pycache__/*')
-          aws s3api put-object --bucket "$ARTIFACT_BUCKET" --key "$KEY" --body dist/app.zip \
-            --metadata "branch=$GITHUB_REF_NAME,run=$GITHUB_RUN_NUMBER,actor=$GITHUB_ACTOR" >/dev/null
-          echo "### Build \`$GITHUB_SHA\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "Uploaded s3://$ARTIFACT_BUCKET/$KEY from \`$GITHUB_REF_NAME\`" >> "$GITHUB_STEP_SUMMARY"
+        run: scripts/ci/build.sh
+        env:
+          BUILD_SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_number }}
+          ACTOR: ${{ github.actor }}
+          SUMMARY_FILE: ${{ github.step_summary }}

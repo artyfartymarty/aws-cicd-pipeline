@@ -3,7 +3,7 @@ tags: [mapping]
 ---
 # Mapping: work → mine
 
-Back to [[00 Home]]. Sources: [[Work pattern]] and [[My pattern]].
+Back to [[00 Home]]. Sources: [[Work pattern]] and [[My pattern]]. This compares the company's setup with my GitHub lab. For the Bitbucket version to use at work, see [[Yield work pattern]] and [[Local to work]].
 
 | Work | Mine | Match |
 |---|---|---|

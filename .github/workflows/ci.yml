@@ -33,14 +33,5 @@ jobs:
       - uses: opentofu/setup-opentofu@v1
         with:
           tofu_version: ${{ env.TOFU_VERSION }}
-      - name: tofu fmt
-        run: tofu fmt -check -recursive infra
-      - name: tofu validate + test (mocked AWS, offline)
-        run: |
-          for stack in infra/modules/lambda-app infra/platform infra/app; do
-            echo "::group::$stack"
-            tofu -chdir="$stack" init -backend=false -input=false
-            tofu -chdir="$stack" validate
-            tofu -chdir="$stack" test
-            echo "::endgroup::"
-          done
+      - name: tofu fmt + validate + test (mocked AWS, offline)
+        run: scripts/ci/test-iac.sh

@@ -56,6 +56,7 @@ flowchart TB
 See [[Runners]] for the reasoning.
 - `runner_mode = "ec2"`: self-hosted Spot runner in the account (pattern A shape).
 - `runner_mode = "github-oidc"`: GitHub-hosted runners federate in with OIDC (pattern B shape). No runner, no internet gateway. Required for the [[Sandbox guardrails]].
+- `runner_mode = "bitbucket-oidc"`: the same, with Bitbucket Pipelines as the issuer. That is the [[Yield work pattern]]; see [[Local to work]].
 
 ## Pipelines
 - CI on every push and PR: pytest, `tofu fmt`, `tofu validate`, `tofu test` with a mocked AWS. Free, no AWS access.

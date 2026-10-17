@@ -1,0 +1,107 @@
+# Work pattern: the Bitbucket Pipelines twin of .github/workflows/.
+# Same stages, same IAM role chain, same scripts (scripts/ci/). Only sign-in and
+# who-may-run-prod differ. The translation guide is docs/vault/Local to work.md.
+#
+#   push to a branch   test                                   (GitHub: ci.yml)
+#   custom deploy-to-dev   test -> build -> dev               (deploy-dev.yml)
+#   push to main       test -> build -> dev -> [manual] prod  (pipeline.yml)
+#   custom release-build   BUILD_SHA -> dev -> [manual] prod  (release.yml)
+#
+# One-time setup in Bitbucket (Repository settings):
+#   Pipelines > Settings: enable Pipelines.
+#   Deployments: environments named dev (type Test) and prod (type Production).
+#     prod: allow only the main branch, and only admins (deployment permissions
+#     are a Premium feature; IAM can't check the branch, so this is the gate).
+#   Pipelines > Repository variables: the values `make bb-vars` prints.
+#   Pipelines > OpenID Connect: copy the URL, audience and UUIDs into
+#     infra/platform/terraform.tfvars (see work.tfvars.example).
+#   .bitbucket/PROD_APPROVERS: Bitbucket user UUIDs allowed to deploy to prod.
+#
+# At work: steps would add `runs-on: [self.hosted, linux, ...]` to use the EKS
+# runners, and images would come through the JFrog proxy.
+
+image: amazon/aws-cli:2.37.7
+
+clone:
+  depth: full # the prod check walks main's history
+
+options:
+  max-time: 30
+
+definitions:
+  caches:
+    tofu-plugins: ~/.terraform.d/plugin-cache
+  steps:
+    - step: &test
+        name: Unit tests + IaC checks
+        image: python:3.12-slim-bookworm
+        caches:
+          - pip
+          - tofu-plugins
+        script:
+          - scripts/ci/install-tools.sh
+          - export TF_PLUGIN_CACHE_DIR=~/.terraform.d/plugin-cache && mkdir -p "$TF_PLUGIN_CACHE_DIR"
+          - pip install -q -r app/requirements-dev.txt
+          - python -m pytest -q app/tests
+          - scripts/ci/test-iac.sh
+
+    - step: &build
+        name: Build (upload once)
+        oidc: true
+        script:
+          - scripts/ci/install-tools.sh
+          - source scripts/ci/bitbucket-aws-login.sh "$AWS_CI_ROLE_ARN"
+          - export BUILD_SHA="$BITBUCKET_COMMIT" BRANCH="${BITBUCKET_BRANCH:-$BITBUCKET_TAG}" RUN_ID="$BITBUCKET_BUILD_NUMBER" ACTOR="$BITBUCKET_STEP_TRIGGERER_UUID"
+          - scripts/ci/build.sh
+
+    - step: &deploy-dev
+        name: Deploy dev
+        deployment: dev
+        oidc: true
+        script:
+          - scripts/ci/install-tools.sh
+          - source scripts/ci/bitbucket-aws-login.sh "$AWS_CI_ROLE_ARN"
+          - export ENV_NAME=dev BUILD_SHA="${BUILD_SHA:-$BITBUCKET_COMMIT}" APPLY=true
+          - scripts/ci/deploy.sh
+
+    # Signs in with the prod-only role: AWS trusts it only for steps in the prod
+    # deployment environment, and Bitbucket lets only main use that environment.
+    - step: &deploy-prod
+        name: Deploy prod
+        deployment: prod
+        trigger: manual
+        oidc: true
+        script:
+          - scripts/ci/install-tools.sh
+          - export ENV_NAME=prod BUILD_SHA="${BUILD_SHA:-$BITBUCKET_COMMIT}" APPLY=true
+          - scripts/ci/check-prod.sh "$BITBUCKET_BRANCH" "$BUILD_SHA" "$BITBUCKET_STEP_TRIGGERER_UUID" .bitbucket/PROD_APPROVERS
+          - source scripts/ci/bitbucket-aws-login.sh "$AWS_CI_PROD_ROLE_ARN"
+          - scripts/ci/deploy.sh
+
+pipelines:
+  # Every branch except main (GitHub: ci.yml on push).
+  default:
+    - step: *test
+
+  branches:
+    main:
+      - step: *test
+      - step: *build
+      - step: *deploy-dev
+      - step: *deploy-prod
+
+  custom:
+    # The "Deploy to Dev" button: Pipelines > Run pipeline > pick any branch.
+    deploy-to-dev:
+      - step: *test
+      - step: *build
+      - step: *deploy-dev
+
+    # Stands in for the Jira Ops subtask: promote, or roll back to, a build of
+    # main. Run it on main with the merge commit SHA of that build.
+    release-build:
+      - variables:
+          - name: BUILD_SHA
+            description: Full commit SHA of a build on main
+      - step: *deploy-dev
+      - step: *deploy-prod

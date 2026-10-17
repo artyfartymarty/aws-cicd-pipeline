@@ -43,30 +43,24 @@ jobs:
       cancel-in-progress: false
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
+      PROJECT: ${{ vars.PROJECT }}
       ENV_NAME: ${{ inputs.env }}
-      TF_IN_AUTOMATION: "1"
-      TF_VAR_env: ${{ inputs.env }}
-      TF_VAR_build_sha: ${{ inputs.build_sha }}
-      TF_VAR_region: ${{ vars.AWS_REGION }}
-      TF_VAR_project: ${{ vars.PROJECT }}
-      TF_VAR_artifact_bucket: ${{ vars.ARTIFACT_BUCKET }}
+      BUILD_SHA: ${{ inputs.build_sha }}
+      ARTIFACT_BUCKET: ${{ vars.ARTIFACT_BUCKET }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      APPLY: ${{ inputs.apply }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the prod check walks main's history
 
       # The "Production Authorization" check. IAM already refuses prod outside
       # main; this adds the approver list. Skipped for plan-only previews.
       - name: Production authorization
         if: inputs.env == 'prod' && inputs.apply
+        run: scripts/ci/check-prod.sh "$GITHUB_REF_NAME" "$BUILD_SHA" "$WHO" .github/PROD_APPROVERS
         env:
           WHO: ${{ github.triggering_actor }}
-        run: |
-          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
-            echo "::error::Prod deploys must run from main (this run is on $GITHUB_REF)."; exit 1
-          fi
-          if ! grep -v '^#' .github/PROD_APPROVERS | grep -qxF "$WHO"; then
-            echo "::error::$WHO is not in .github/PROD_APPROVERS, so cannot deploy to prod."; exit 1
-          fi
-          echo "$WHO is authorized for prod."
 
       - name: Sign in to AWS (prod, main-only OIDC role)
         if: inputs.env == 'prod'
@@ -84,74 +78,12 @@ jobs:
           role-to-assume: ${{ vars.AWS_CI_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Read ${{ inputs.env }} config from SSM
-        run: |
-          CFG="$(aws ssm get-parameter --name "/$TF_VAR_project/env/$ENV_NAME/config" --query Parameter.Value --output text)"
-          {
-            echo "DEPLOY_ROLE_ARN=$(jq -r .deploy_role_arn <<<"$CFG")"
-            echo "TF_VAR_app_boundary_arn=$(jq -r .app_boundary_arn <<<"$CFG")"
-            echo "TF_VAR_lambda_subnet_ids=$(jq -c .lambda_subnet_ids <<<"$CFG")"
-            echo "TF_VAR_lambda_security_group_ids=$(jq -c .lambda_security_group_ids <<<"$CFG")"
-          } >> "$GITHUB_ENV"
-
-      # Base role -> this env's deploy role, exported as env credentials so
-      # tofu and the AWS CLI both use them.
-      - name: Assume the ${{ inputs.env }} deploy role
-        run: |
-          CREDS="$(aws sts assume-role --role-arn "$DEPLOY_ROLE_ARN" \
-            --role-session-name "gh-$ENV_NAME-$GITHUB_RUN_ID" --duration-seconds 3600 \
-            --query Credentials --output json)"
-          for k in AccessKeyId SecretAccessKey SessionToken; do echo "::add-mask::$(jq -r ".$k" <<<"$CREDS")"; done
-          {
-            echo "AWS_ACCESS_KEY_ID=$(jq -r .AccessKeyId <<<"$CREDS")"
-            echo "AWS_SECRET_ACCESS_KEY=$(jq -r .SecretAccessKey <<<"$CREDS")"
-            echo "AWS_SESSION_TOKEN=$(jq -r .SessionToken <<<"$CREDS")"
-          } >> "$GITHUB_ENV"
-
-      - name: Who am I
-        run: aws sts get-caller-identity --query Arn --output text
-
-      # Deploy the FIRST version ever uploaded for this build. A later upload to
-      # the same key (by anyone) is ignored, so prod gets what dev tested.
-      - name: Pin the build's first upload
-        run: |
-          KEY="builds/$TF_VAR_build_sha/app.zip"
-          VID="$(aws s3api list-object-versions --bucket "$TF_VAR_artifact_bucket" --prefix "$KEY" \
-            --query "sort_by(Versions[?Key=='$KEY'], &LastModified)[0].VersionId" --output text)"
-          if [ -z "$VID" ] || [ "$VID" = "None" ]; then
-            echo "::error::No build at s3://$TF_VAR_artifact_bucket/$KEY"; exit 1
-          fi
-          echo "TF_VAR_artifact_version=$VID" >> "$GITHUB_ENV"
-          echo "Deploying $KEY version $VID"
-
       - uses: opentofu/setup-opentofu@v1
         with:
           tofu_version: "1.12.0"
           tofu_wrapper: false
 
-      - name: tofu init
-        run: |
-          tofu -chdir=infra/app init -input=false \
-            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
-            -backend-config="key=app/$ENV_NAME.tfstate" \
-            -backend-config="region=$AWS_REGION"
-
-      - name: tofu plan
-        run: |
-          tofu -chdir=infra/app plan -input=false -no-color -out=tfplan | tee plan.txt
-          { echo "### Plan for $ENV_NAME (build \`$TF_VAR_build_sha\`)"; echo '```'; grep -E '^(Plan:|No changes)|will be|must be' plan.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: tofu apply
-        if: inputs.apply
-        run: tofu -chdir=infra/app apply -input=false tfplan
-
-      - name: Smoke test
-        if: inputs.apply
-        run: |
-          FN="$(tofu -chdir=infra/app output -raw function_name)"
-          aws lambda invoke --function-name "$FN" --cli-binary-format raw-in-base64-out \
-            --payload '{"action":"health"}' out.json >/dev/null
-          cat out.json; echo
-          test "$(jq -r .build out.json)" = "$TF_VAR_build_sha"
-          test "$(jq -r .env out.json)" = "$ENV_NAME"
-          echo "### $ENV_NAME is running build \`$TF_VAR_build_sha\`" >> "$GITHUB_STEP_SUMMARY"
+      # SSM config -> assume the env's deploy role -> pin the build -> init,
+      # plan, apply -> smoke test. Same script as bitbucket-pipelines.yml.
+      - name: ${{ inputs.apply && 'Deploy' || 'Plan' }} ${{ inputs.env }}
+        run: SUMMARY_FILE="$GITHUB_STEP_SUMMARY" scripts/ci/deploy.sh

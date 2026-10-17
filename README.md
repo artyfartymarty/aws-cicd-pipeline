@@ -6,7 +6,20 @@ the same build to Prod), rebuilt on GitHub Actions + one AWS account with
 OpenTofu. It is laid out as a reusable pattern so the Yield team can run dev
 and prod side by side in a single sandbox account.
 
-## Two modes
+## Two patterns: here and at work
+
+| | Here (my account) | At work (Yield sandbox) |
+|---|---|---|
+| CI | GitHub Actions, `.github/workflows/` | Bitbucket Pipelines, `bitbucket-pipelines.yml` |
+| `runner_mode` | `ec2` or `github-oidc` | `bitbucket-oidc` (`infra/platform/work.tfvars.example`) |
+| Prod gate in IAM | OIDC `sub` must be `main` | OIDC `sub` must carry the prod deployment environment |
+
+Both CI files call the same `scripts/ci/*.sh` and the same `infra/`, so only
+sign-in and prod gating differ. The translation guide is
+[`docs/vault/Local to work.md`](docs/vault/Local%20to%20work.md), and the work
+pattern itself is [`docs/vault/Yield work pattern.md`](docs/vault/Yield%20work%20pattern.md).
+
+## Two modes (GitHub)
 
 | | `runner_mode = "ec2"` (default) | `runner_mode = "github-oidc"` |
 |---|---|---|
@@ -17,7 +30,10 @@ and prod side by side in a single sandbox account.
 | Use it for | Mirroring the work setup in your personal account | The Yield sandbox (see `sandbox-guardrails/`), or the cheapest personal setup |
 | Cost | ~$6.50/month 24/7, ~$1 if stopped when idle | ~$0.25/month |
 
-Both modes use the same role chain: base role -> `<project>-deploy-dev` /
+A third mode, `bitbucket-oidc`, is the same as `github-oidc` with Bitbucket
+as the OIDC issuer; it is the one to use at work.
+
+All modes use the same role chain: base role -> `<project>-deploy-dev` /
 `<project>-deploy-prod`. Settings for the sandbox are in
 `infra/platform/sandbox.tfvars.example`.
 

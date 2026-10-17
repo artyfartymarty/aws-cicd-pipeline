@@ -1,5 +1,6 @@
-# Yield sandbox: no internet gateway, no runner. CI runs on GitHub-hosted
+# GitHub-hosted runners + OIDC: no internet gateway, no runner. CI runs on GitHub-hosted
 # runners and signs in with OIDC; Lambdas run in private subnets.
+# For the work sandbox (Bitbucket) use work.tfvars.example instead.
 #   cp infra/platform/sandbox.tfvars.example infra/platform/terraform.tfvars
 project                      = "yield"
 github_repo                  = "<owner>/<repo>"

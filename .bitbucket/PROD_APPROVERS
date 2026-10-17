@@ -1,0 +1,4 @@
+# Bitbucket user UUIDs (with braces) allowed to deploy to prod, one per line.
+# Find yours at https://api.bitbucket.org/2.0/user (field "uuid").
+# This is the stand-in for work's Production Authorization check; the GitHub
+# twin is .github/PROD_APPROVERS (GitHub logins).

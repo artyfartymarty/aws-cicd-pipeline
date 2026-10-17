@@ -1,0 +1,18 @@
+# Work pattern (Yield sandbox): Bitbucket Pipelines signs in with OIDC. No
+# internet gateway, no runner; Lambdas run in private subnets.
+#   cp infra/platform/work.tfvars.example infra/platform/terraform.tfvars
+# Copy the Bitbucket values from Repository settings > Pipelines > OpenID Connect
+# (the deployment environment UUIDs are in its "Deployment environment" dropdown).
+project                      = "yield"
+runner_mode                  = "bitbucket-oidc"
+lambda_in_vpc                = true
+org_permissions_boundary_arn = "arn:aws:iam::<SANDBOX_ACCOUNT_ID>:policy/yield-boundary"
+
+bitbucket_oidc_url      = "https://api.bitbucket.org/2.0/workspaces/<workspace>/pipelines-config/identity/oidc"
+bitbucket_oidc_audience = "ari:cloud:bitbucket::workspace/<workspace-uuid>"
+bitbucket_repo_uuid     = "{<repository-uuid>}"
+bitbucket_deployment_uuids = {
+  dev  = "{<dev-environment-uuid>}"
+  prod = "{<prod-environment-uuid>}"
+}
+# create_oidc_provider = false   # if IT already created this workspace's Bitbucket OIDC provider

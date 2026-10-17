@@ -21,7 +21,7 @@ A runner must reach GitHub (or Bitbucket) over the internet. The sandbox rule is
 | Works with no-internet sandbox | Yes | Yes (runner's account has egress, sandbox doesn't) | Only if IT adds a firewall path |
 | Who sets it up | You | You (personal: a second free AWS account); IT for the team | IT |
 | Extra cost | $0 | ~$1 to $6.50/month (same runner) | Transit Gateway attachment ~$36/month + data, plus IT's firewall |
-| Code today | `runner_mode = "github-oidc"` | `ec2` mode + cross-account trust (not built yet) | `ec2` mode minus the IGW (not built) |
+| Code today | `runner_mode = "github-oidc"` here, `"bitbucket-oidc"` at work ([[Yield work pattern]]) | `ec2` mode + cross-account trust (not built yet) | `ec2` mode minus the IGW (not built) |
 
 ```mermaid
 flowchart TB

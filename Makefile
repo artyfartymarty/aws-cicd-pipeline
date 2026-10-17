@@ -12,7 +12,7 @@ STATE_BUCKET  = $(PROJECT)-tfstate-$(ACCOUNT_ID)
 TOFU_PLATFORM = tofu -chdir=infra/platform
 
 .PHONY: help test test-py test-iac lock bootstrap-state pat platform-init platform-plan platform-apply \
-        gh-vars runner-start runner-stop runner-status runner-shell invoke teardown
+        gh-vars bb-vars runner-start runner-stop runner-status runner-shell invoke teardown
 
 help: ## Show targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
@@ -23,11 +23,8 @@ test: test-py test-iac ## Run every local check (same as CI)
 test-py: ## Python unit tests
 	python3 -m pytest -q app/tests
 
-test-iac: ## tofu fmt + validate + mocked tests for both stacks
-	tofu fmt -check -recursive infra
-	@for s in infra/modules/lambda-app infra/platform infra/app; do \
-	  tofu -chdir=$$s init -backend=false -input=false >/dev/null && \
-	  tofu -chdir=$$s validate && tofu -chdir=$$s test || exit 1; done
+test-iac: ## tofu fmt + validate + mocked tests for every stack
+	scripts/ci/test-iac.sh
 
 lock: ## Refresh provider lock files for mac, Linux and the arm64 runner
 	@for s in infra/modules/lambda-app infra/platform infra/app; do \
@@ -55,9 +52,14 @@ platform-apply: platform-init ## Create/update them (asks for confirmation)
 	$(TOFU_PLATFORM) apply -var region=$(AWS_REGION) -var project=$(PROJECT)
 
 gh-vars: ## Set the repo variables the workflows read (needs gh CLI, run inside the repo)
-	@$(TOFU_PLATFORM) output -json github_variables | \
+	@$(TOFU_PLATFORM) output -json ci_variables | \
 	  python3 -c 'import json,sys;[print(k,v) for k,v in json.load(sys.stdin).items() if v]' | \
 	  while read -r k v; do gh variable set "$$k" --body "$$v"; done
+
+bb-vars: ## Print the Bitbucket repository variables to add (work pattern)
+	@echo "Add these in Bitbucket: Repository settings > Pipelines > Repository variables"
+	@$(TOFU_PLATFORM) output -json ci_variables | \
+	  python3 -c 'import json,sys;[print(f"  {k} = {v}") for k,v in json.load(sys.stdin).items() if v]'
 
 ## --- Day to day -------------------------------------------------------------
 runner-start: ## Start the runner (do this before you push)

@@ -10,8 +10,9 @@ variable "region" {
 }
 
 variable "github_repo" {
-  description = "owner/name of the GitHub repo the runner registers to."
+  description = "owner/name of the GitHub repo (runner_mode ec2 / github-oidc)."
   type        = string
+  default     = ""
 }
 
 variable "instance_type" {
@@ -46,20 +47,23 @@ variable "environments" {
 variable "runner_mode" {
   description = <<-EOT
     How CI reaches AWS.
-      "ec2"         - a self-hosted runner EC2 in this account (needs an internet gateway).
-      "github-oidc" - GitHub-hosted runners sign in with OIDC; nothing runs in the account
-                      and no internet gateway is created. Use this in the Yield sandbox.
+      "ec2"            - a self-hosted GitHub Actions runner EC2 in this account (needs an
+                         internet gateway). My account.
+      "github-oidc"    - GitHub-hosted runners sign in with OIDC; nothing runs in the account
+                         and no internet gateway is created.
+      "bitbucket-oidc" - Bitbucket Pipelines steps sign in with OIDC; same shape as
+                         github-oidc. The work pattern (Yield sandbox).
   EOT
   type        = string
   default     = "ec2"
   validation {
-    condition     = contains(["ec2", "github-oidc"], var.runner_mode)
-    error_message = "runner_mode must be ec2 or github-oidc."
+    condition     = contains(["ec2", "github-oidc", "bitbucket-oidc"], var.runner_mode)
+    error_message = "runner_mode must be ec2, github-oidc or bitbucket-oidc."
   }
 }
 
 variable "create_oidc_provider" {
-  description = "Create the GitHub OIDC provider. Set false if the account already has one (only one per account)."
+  description = "Create the CI OIDC provider (GitHub or Bitbucket). Set false if the account already has it (only one per issuer per account)."
   type        = bool
   default     = true
 }
@@ -96,4 +100,39 @@ variable "runner_version" {
   description = "GitHub Actions runner version, pinned (https://github.com/actions/runner/releases)."
   type        = string
   default     = "2.328.0"
+}
+
+# --- Bitbucket (runner_mode = "bitbucket-oidc") -------------------------------
+# Copy each value from Bitbucket: Repository settings > Pipelines > OpenID Connect.
+
+variable "bitbucket_oidc_url" {
+  description = "Identity provider URL, https://api.bitbucket.org/2.0/workspaces/<workspace>/pipelines-config/identity/oidc"
+  type        = string
+  default     = ""
+  validation {
+    condition     = var.bitbucket_oidc_url == "" || can(regex("^https://api\\.bitbucket\\.org/2\\.0/workspaces/[^/]+/pipelines-config/identity/oidc$", var.bitbucket_oidc_url))
+    error_message = "bitbucket_oidc_url must be the Identity provider URL shown in Bitbucket."
+  }
+}
+
+variable "bitbucket_oidc_audience" {
+  description = "Audience, ari:cloud:bitbucket::workspace/<workspace-uuid>"
+  type        = string
+  default     = ""
+}
+
+variable "bitbucket_repo_uuid" {
+  description = "Repository UUID including the braces, e.g. {0f1e...}."
+  type        = string
+  default     = ""
+  validation {
+    condition     = var.bitbucket_repo_uuid == "" || can(regex("^\\{[0-9a-f-]{36}\\}$", var.bitbucket_repo_uuid))
+    error_message = "bitbucket_repo_uuid must be the repository UUID with its braces."
+  }
+}
+
+variable "bitbucket_deployment_uuids" {
+  description = "Deployment environment UUIDs (with braces) by env name. Every env in prod_environments needs one."
+  type        = map(string)
+  default     = {}
 }
