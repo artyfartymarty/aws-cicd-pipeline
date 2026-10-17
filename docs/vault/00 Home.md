@@ -26,6 +26,7 @@ Open this folder (`docs/vault`) as an Obsidian vault. Diagrams are Mermaid, whic
 - [[Cost]]
 - [[Review findings]]
 - [[Gaps and next steps]]
+- [[Glossary]]: the words this vault uses, and the ones it avoids
 
 > [!note] Sources
 > "Work" facts come from the Rovo screenshots Brian shared (Confluence pages summarized by Rovo, marked "Uses AI. Verify results"). Where I'm inferring, the note says so.
