@@ -48,8 +48,8 @@ sequenceDiagram
 - **Bitbucket side.** AWS can only match `aud` and `sub` for this issuer, and Bitbucket's `sub` has no branch in it. So *which branch may use the prod environment* must be set in Bitbucket: Repository settings → Deployments → prod → **only `main`, only admins**. Those deployment permissions are a **Bitbucket Premium** feature.
 - **Script side.** `check-prod.sh` refuses non-`main` runs, SHAs that were never `main`'s tip, and anyone not in `.bitbucket/PROD_APPROVERS`. A branch can edit that script, so it is a speed bump; the two gates above are the real ones.
 
-> [!warning] Check with DevOps
-> If the work workspace is not on Premium, or prod deployment permissions aren't set, then anyone who can push a branch can add `deployment: prod` to the YAML and get prod credentials. Ask whether the workspace has deployment permissions, or whether prod must go through Autobahn's Production Authorization instead.
+> [!warning] Turn it on per repo
+> The pattern assumes the work workspace has Premium (Brian expects it does, as best practice). Premium only provides the feature: each repo's `prod` environment still needs "only `main`, only admins" set in its Deployments settings (setup step 2). Until it is set, anyone who can push a branch can add `deployment: prod` to the YAML and get prod credentials.
 
 ## Setting it up in the sandbox
 
