@@ -40,6 +40,8 @@ flowchart TB
 ```
 
 ## Recommendation
-Use **option 1** for the sandbox now: it works on day one, costs nothing, and is the pattern work uses for OpenTofu. If you want to practice the EKS/Tools-account shape, **option 2** is the closest copy, and a second AWS account is free. I've left that as a decision for you.
+Use **option 1** for the sandbox now: it works on day one, costs nothing, and is the pattern work uses for OpenTofu. If you want to practice the EKS/Tools-account shape, **option 2** is the closest copy, and a second AWS account is free. 
+
+**Decision (2026-10-17):** option 1, OIDC with hosted runners, for the sandbox. Chosen as the default while Brian was away; he can overrule it. Option 2 stays a later exercise.
 
 Related: [[IAM role chain]], [[Network]], [[Sandbox guardrails]].
