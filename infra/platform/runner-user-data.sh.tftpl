@@ -2,12 +2,15 @@
 # Boot script for the self-hosted runner (Amazon Linux 2023, arm64).
 # Rendered by OpenTofu templatefile(): $${x} below is a literal shell $${x}.
 set -euxo pipefail
+umask 077
 exec > >(tee /var/log/runner-bootstrap.log) 2>&1
+chmod 600 /var/log/runner-bootstrap.log
 
 PROJECT="${project}"
 REGION="${region}"
 REPO="${github_repo}"
 TOFU_VERSION="${tofu_version}"
+RUNNER_VERSION="${runner_version}"
 RUNNER_HOME=/opt/actions-runner
 
 # 1 GB swap so a t4g.micro (1 GB RAM) doesn't run out of memory mid-plan.
@@ -23,6 +26,7 @@ dnf install -y git jq unzip zip tar libicu krb5-libs openssl-libs python3
 if ! command -v tofu >/dev/null || ! tofu version | grep -q "v$TOFU_VERSION"; then
   curl -fsSLo /tmp/tofu.zip "https://github.com/opentofu/opentofu/releases/download/v$TOFU_VERSION/tofu_$${TOFU_VERSION}_linux_arm64.zip"
   unzip -o /tmp/tofu.zip tofu -d /usr/local/bin && rm /tmp/tofu.zip
+  chmod 755 /usr/local/bin/tofu
 fi
 
 # Already registered (e.g. instance was stopped and started): the service just resumes.
@@ -30,23 +34,28 @@ if [ -f "$RUNNER_HOME/.runner" ]; then
   exit 0
 fi
 
-mkdir -p "$RUNNER_HOME" && chown ec2-user:ec2-user "$RUNNER_HOME"
+# Jobs run as "runner": no sudo, no access to ec2-user's files.
+id runner >/dev/null 2>&1 || useradd --create-home --shell /bin/bash runner
+mkdir -p "$RUNNER_HOME" && chown runner:runner "$RUNNER_HOME"
 cd "$RUNNER_HOME"
 
-RUNNER_VERSION="$(curl -fsSL https://api.github.com/repos/actions/runner/releases/latest | jq -r .tag_name | sed 's/^v//')"
 curl -fsSLo runner.tgz "https://github.com/actions/runner/releases/download/v$${RUNNER_VERSION}/actions-runner-linux-arm64-$${RUNNER_VERSION}.tar.gz"
 tar xzf runner.tgz && rm runner.tgz
-chown -R ec2-user:ec2-user "$RUNNER_HOME"
+chown -R runner:runner "$RUNNER_HOME"
 
-# The PAT never touches disk; it only buys a one-hour registration token.
+# The PAT only buys a one-hour registration token. Tracing is off here so
+# neither the PAT nor the token lands in the boot log or the console output.
+set +x
 PAT="$(aws ssm get-parameter --region "$REGION" --name "/$PROJECT/github-pat" --with-decryption --query Parameter.Value --output text)"
 REG_TOKEN="$(curl -fsSL -X POST -H "Authorization: Bearer $PAT" -H "Accept: application/vnd.github+json" \
   "https://api.github.com/repos/$REPO/actions/runners/registration-token" | jq -r .token)"
 unset PAT
 
-sudo -u ec2-user ./config.sh --unattended --replace \
+sudo -u runner ./config.sh --unattended --replace \
   --url "https://github.com/$REPO" --token "$REG_TOKEN" \
   --name "$PROJECT-runner" --labels "aws,$PROJECT" --work _work
+unset REG_TOKEN
+set -x
 
-./svc.sh install ec2-user
+./svc.sh install runner
 ./svc.sh start

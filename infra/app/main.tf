@@ -14,6 +14,7 @@ module "app" {
   build_sha                = var.build_sha
   artifact_bucket          = var.artifact_bucket
   artifact_key             = "builds/${var.build_sha}/app.zip"
+  artifact_version         = var.artifact_version
   permissions_boundary_arn = var.app_boundary_arn
   deletion_protection      = var.env == "prod"
   memory_mb                = var.memory_mb

@@ -30,7 +30,7 @@ Both modes use the same role chain: base role -> `<project>-deploy-dev` /
 | EKS self-hosted runners in the Tools account | One `t4g.micro` Spot EC2 runner in its own VPC (EKS has a ~$73/month control-plane fee) |
 | OIDC base role -> `provisioner-*` role chain | Runner instance role (base) -> `cicd-lab-deploy-dev` / `cicd-lab-deploy-prod` |
 | JFrog / ECR artifact | S3 `builds/<git sha>/app.zip`, built once, never overwritten |
-| Config Graph `infraConfig` / Compass per-env settings | GitHub Environment variables on `dev` and `prod` (outside the repo) |
+| Config Graph `infraConfig` / Compass per-env settings | SSM Parameter Store `/<project>/env/<env>/config` (outside the repo) |
 | Harness IACM workspaces dev/test/prod | One state file per env: `app/dev.tfstate`, `app/prod.tfstate` |
 | "Deploy to Dev" button, any branch | **Deploy to Dev** workflow, Run workflow on any branch |
 | Jira Ops subtask + Production Authorization | **Release build** workflow from `main` + `.github/PROD_APPROVERS` allow-list |
@@ -50,24 +50,37 @@ main --merge--> Main pipeline --> CI -> build sha -> apply dev -> PLAN-ONLY prev
             (manual APPROVE) Release build(sha) --> apply dev -> authz check -> apply prod -> smoke test
 ```
 
-- Prod only runs from `main`, only for SHAs that are on `main`, only after dev
-  succeeded in the same run, and only for people in `.github/PROD_APPROVERS`.
-  A repo admin who isn't listed is blocked, same as at work.
-- The prod artifact is byte-for-byte the one dev tested (same S3 object).
+- **AWS** only hands out prod credentials to workflows running on `main`
+  (OIDC subject `repo:<owner>/<repo>:ref:refs/heads/main`). A workflow edited on
+  another branch is refused by IAM, not just by YAML. The self-hosted runner
+  never holds prod credentials; prod jobs run on GitHub-hosted runners.
+- On top of that, **Release build** checks that the SHA was once the tip of
+  `main`, that dev succeeded first, and that you're in `.github/PROD_APPROVERS`.
+- Deploys pin the **first** S3 version ever uploaded for a build, so a later
+  upload to the same key can't change what reaches prod.
 - Rollback = run **Release build** with an older SHA.
+
+> [!warning] GitHub Free limit
+> On a free private repo there is no branch protection, so anyone with write
+> access can push to `main` and so reach prod. Alone in your repo that's you.
+> For a team, GitHub Pro/Team adds branch protection, required reviewers and
+> CODEOWNERS on `.github/`, which close this. See `docs/vault/Review findings.md`.
 
 ## Separation of dev and prod in one account
 
 ```
-runner instance role         register runner, publish artifacts, sts:AssumeRole only
-  -> cicd-lab-deploy-dev      cicd-lab-dev-*  resources + app/dev.tfstate only
-  -> cicd-lab-deploy-prod     cicd-lab-prod-* resources + app/prod.tfstate only
+runner role or cicd-lab-ci (any branch)   publish artifacts, read dev config
+  -> cicd-lab-deploy-dev                  cicd-lab-dev-*  resources + app/dev.tfstate only
+cicd-lab-ci-prod (main branch only)       read artifacts and prod config
+  -> cicd-lab-deploy-prod                 cicd-lab-prod-* resources + app/prod.tfstate only
 ```
 
-Every role the pipeline creates must carry that env's permissions boundary
-(`cicd-lab-<env>-app-boundary`), so a dev run cannot create anything that
-reaches prod. The platform stack (runner, VPC, IAM) is applied only by you,
-from your laptop; the runner cannot change its own permissions.
+Each deploy role, and every role it creates, carries that env's permissions
+boundary (`cicd-lab-<env>-app-boundary`). The boundary only covers that env's
+resources and only lets roles create roles under the same boundary, so nothing
+the dev pipeline makes can reach prod. Deploy roles also can't make a Lambda
+public, edit trust policies, or weaken a boundary. The platform stack (runner,
+VPC, IAM) is applied only by you (or IT), so no pipeline can change its own permissions.
 
 ## Repo layout
 
@@ -78,7 +91,8 @@ infra/app/                   Layer 3 pattern, applied by the pipeline per env
 infra/platform/              runner, VPC, IAM roles, artifact bucket (you apply this)
 .github/workflows/           ci, _build, _deploy (templates), deploy-dev, pipeline, release
 scripts/                     bootstrap-state, runner-power, teardown
-sandbox-guardrails/          draft SCP + team policy + boundary for the Yield sandbox account
+sandbox-guardrails/          draft SCP, RCP, team policy and boundary for the Yield sandbox account
+docs/vault/                  Obsidian vault: work vs mine, UML and charts
 ```
 
 ## Test locally first (free)
@@ -121,7 +135,7 @@ and an empty **private** GitHub repo with this code pushed to it.
    Runners within a few minutes.
 4. **GitHub variables + environments**
    ```bash
-   make gh-vars                    # repo vars + dev/prod Environments with their DEPLOY_ROLE_ARN
+   make gh-vars                    # repo variables: region, buckets, the two OIDC role ARNs, RUNS_ON
    ```
 5. **First deploy:** push to `main` (or Actions > Deploy to Dev). Then
    Actions > Release build > Run workflow on `main` with that commit's SHA.
@@ -177,8 +191,9 @@ Nothing hard-codes an account ID. To stand it up in the sandbox:
   (and `project = "yield"` in `terraform.tfvars`). All names, roles and scopes follow it.
 - Add environments by setting `environments = ["dev", "test", "prod"]` in the
   platform stack and adding `test` to the `env` validation in `infra/app/variables.tf`.
-- If IT pre-creates the roles (like the StackSet at work), drop `iam.tf` from
-  the platform stack and set `DEPLOY_ROLE_ARN` per environment to their ARNs.
+- IT applies `infra/platform` once (like the StackSet at work) with
+  `sandbox.tfvars.example`, so the team can't edit the pipeline roles. Per-env
+  settings land in SSM, which the workflows read.
 
 ## Next steps (not built yet, on purpose)
 
@@ -187,9 +202,8 @@ Nothing hard-codes an account ID. To stand it up in the sandbox:
   `infra/app/main.tf` and `_deploy.yml` show the exact `source`/`uses` lines).
 - Mark the pattern repo as a GitHub *template repository* to play the Autobahn
   scaffolder role ("Use this template" creates a new repo with the pipeline wired).
-- Required reviewers on the `prod` Environment, if the repo is on a paid plan.
-- In the sandbox, the account boundary (`yield-boundary`) replaces the per-env
-  app boundaries, so dev and prod are separated by the deploy roles' scopes
-  rather than by two boundaries. Ask IT for per-env boundaries if that matters.
+- GitHub Pro/Team: branch protection on `main`, CODEOWNERS on `.github/`, and a
+  `prod` Environment with required reviewers (the OIDC trust then moves to
+  `repo:<owner>/<repo>:environment:prod`).
 - Interface VPC endpoints (SSM, Secrets Manager, etc.) for Lambdas that need
   them. They cost about $7/month each per AZ, so none are created by default.

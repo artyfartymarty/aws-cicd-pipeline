@@ -2,10 +2,15 @@
 # one environment. Callers pass env + build_sha, and apply: false for a preview.
 # Later this file can live in its own repo and be pinned by tag, e.g.
 #   uses: <you>/pipeline-templates/.github/workflows/_deploy.yml@v1
-# Runs on the self-hosted runner (ec2 mode) or a GitHub-hosted runner with OIDC
-# (sandbox mode). Either way the base role assumes this env's deploy role
-# (DEPLOY_ROLE_ARN, a GitHub Environment variable), so a dev run cannot touch
-# prod resources. No AWS keys are stored in GitHub.
+#
+# Credentials:
+#   dev  - the self-hosted runner's instance role (ec2 mode) or <project>-ci via
+#          OIDC (github-oidc mode), then <project>-deploy-dev.
+#   prod - always a GitHub-hosted runner with <project>-ci-prod via OIDC. AWS only
+#          trusts that role for jobs on refs/heads/main, so a workflow edited on
+#          another branch cannot get prod credentials, whatever its YAML says.
+# Per-env settings come from SSM (/<project>/env/<env>/config), not from GitHub,
+# because GitHub Free has no environment variables in private repos.
 name: deploy (template)
 
 on:
@@ -30,30 +35,28 @@ permissions:
 jobs:
   deploy:
     name: ${{ inputs.apply && 'Deploy' || 'Plan' }} ${{ inputs.env }}
-    runs-on: ${{ fromJSON(vars.RUNS_ON || '["self-hosted","aws"]') }}
-    # GitHub Environment: shows deployments per env, and applies any protection
-    # rules you add to it (required reviewers need a public repo or a paid plan).
-    environment: ${{ inputs.env }}
+    runs-on: ${{ inputs.env == 'prod' && 'ubuntu-latest' || fromJSON(vars.RUNS_ON || '["self-hosted","aws"]') }}
+    # No `environment:` key on purpose: it would change the OIDC subject claim
+    # and the main-only prod trust would stop matching.
     concurrency:
       group: deploy-${{ inputs.env }}
       cancel-in-progress: false
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
+      ENV_NAME: ${{ inputs.env }}
       TF_IN_AUTOMATION: "1"
       TF_VAR_env: ${{ inputs.env }}
       TF_VAR_build_sha: ${{ inputs.build_sha }}
       TF_VAR_region: ${{ vars.AWS_REGION }}
       TF_VAR_project: ${{ vars.PROJECT }}
       TF_VAR_artifact_bucket: ${{ vars.ARTIFACT_BUCKET }}
-      TF_VAR_app_boundary_arn: ${{ vars.APP_BOUNDARY_ARN }}
-      TF_VAR_lambda_subnet_ids: ${{ vars.LAMBDA_SUBNET_IDS || '[]' }}
-      TF_VAR_lambda_security_group_ids: ${{ vars.LAMBDA_SECURITY_GROUP_IDS || '[]' }}
     steps:
       - uses: actions/checkout@v4
 
-      # The "Production Authorization" check: prod only from main, only by listed people.
+      # The "Production Authorization" check. IAM already refuses prod outside
+      # main; this adds the approver list. Skipped for plan-only previews.
       - name: Production authorization
-        if: inputs.env == 'prod'
+        if: inputs.env == 'prod' && inputs.apply
         env:
           WHO: ${{ github.triggering_actor }}
         run: |
@@ -65,24 +68,38 @@ jobs:
           fi
           echo "$WHO is authorized for prod."
 
-      # OIDC mode (Yield sandbox): GitHub-hosted runner signs in as the base CI role.
-      # In ec2 mode AWS_CI_ROLE_ARN is unset and the runner's instance role is used.
-      - name: Sign in to AWS with OIDC
-        if: vars.AWS_CI_ROLE_ARN != ''
+      - name: Sign in to AWS (prod, main-only OIDC role)
+        if: inputs.env == 'prod'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_CI_PROD_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # github-oidc mode only; in ec2 mode AWS_CI_ROLE_ARN is unset and the
+      # runner's instance role is used.
+      - name: Sign in to AWS (non-prod OIDC role)
+        if: inputs.env != 'prod' && vars.AWS_CI_ROLE_ARN != ''
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_CI_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      # Base role -> this env's deploy role. Exported as env credentials so
+      - name: Read ${{ inputs.env }} config from SSM
+        run: |
+          CFG="$(aws ssm get-parameter --name "/$TF_VAR_project/env/$ENV_NAME/config" --query Parameter.Value --output text)"
+          {
+            echo "DEPLOY_ROLE_ARN=$(jq -r .deploy_role_arn <<<"$CFG")"
+            echo "TF_VAR_app_boundary_arn=$(jq -r .app_boundary_arn <<<"$CFG")"
+            echo "TF_VAR_lambda_subnet_ids=$(jq -c .lambda_subnet_ids <<<"$CFG")"
+            echo "TF_VAR_lambda_security_group_ids=$(jq -c .lambda_security_group_ids <<<"$CFG")"
+          } >> "$GITHUB_ENV"
+
+      # Base role -> this env's deploy role, exported as env credentials so
       # tofu and the AWS CLI both use them.
       - name: Assume the ${{ inputs.env }} deploy role
-        env:
-          ROLE_ARN: ${{ vars.DEPLOY_ROLE_ARN }}
         run: |
-          test -n "$ROLE_ARN" || { echo "::error::DEPLOY_ROLE_ARN is not set on the ${{ inputs.env }} environment. Run make gh-vars."; exit 1; }
-          CREDS="$(aws sts assume-role --role-arn "$ROLE_ARN" \
-            --role-session-name "gh-${{ inputs.env }}-$GITHUB_RUN_ID" --duration-seconds 3600 \
+          CREDS="$(aws sts assume-role --role-arn "$DEPLOY_ROLE_ARN" \
+            --role-session-name "gh-$ENV_NAME-$GITHUB_RUN_ID" --duration-seconds 3600 \
             --query Credentials --output json)"
           for k in AccessKeyId SecretAccessKey SessionToken; do echo "::add-mask::$(jq -r ".$k" <<<"$CREDS")"; done
           {
@@ -91,28 +108,38 @@ jobs:
             echo "AWS_SESSION_TOKEN=$(jq -r .SessionToken <<<"$CREDS")"
           } >> "$GITHUB_ENV"
 
+      - name: Who am I
+        run: aws sts get-caller-identity --query Arn --output text
+
+      # Deploy the FIRST version ever uploaded for this build. A later upload to
+      # the same key (by anyone) is ignored, so prod gets what dev tested.
+      - name: Pin the build's first upload
+        run: |
+          KEY="builds/$TF_VAR_build_sha/app.zip"
+          VID="$(aws s3api list-object-versions --bucket "$TF_VAR_artifact_bucket" --prefix "$KEY" \
+            --query "sort_by(Versions[?Key=='$KEY'], &LastModified)[0].VersionId" --output text)"
+          if [ -z "$VID" ] || [ "$VID" = "None" ]; then
+            echo "::error::No build at s3://$TF_VAR_artifact_bucket/$KEY"; exit 1
+          fi
+          echo "TF_VAR_artifact_version=$VID" >> "$GITHUB_ENV"
+          echo "Deploying $KEY version $VID"
+
       - uses: opentofu/setup-opentofu@v1
         with:
           tofu_version: "1.12.0"
           tofu_wrapper: false
 
-      - name: Who am I
-        run: aws sts get-caller-identity --query Arn --output text
-
-      - name: Check the build exists
-        run: aws s3api head-object --bucket "$TF_VAR_artifact_bucket" --key "builds/$TF_VAR_build_sha/app.zip" >/dev/null
-
       - name: tofu init
         run: |
           tofu -chdir=infra/app init -input=false \
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
-            -backend-config="key=app/${{ inputs.env }}.tfstate" \
+            -backend-config="key=app/$ENV_NAME.tfstate" \
             -backend-config="region=$AWS_REGION"
 
       - name: tofu plan
         run: |
           tofu -chdir=infra/app plan -input=false -no-color -out=tfplan | tee plan.txt
-          { echo "### Plan for ${{ inputs.env }} (build \`$TF_VAR_build_sha\`)"; echo '```'; grep -E '^(Plan:|No changes)|will be|must be' plan.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          { echo "### Plan for $ENV_NAME (build \`$TF_VAR_build_sha\`)"; echo '```'; grep -E '^(Plan:|No changes)|will be|must be' plan.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: tofu apply
         if: inputs.apply
@@ -126,5 +153,5 @@ jobs:
             --payload '{"action":"health"}' out.json >/dev/null
           cat out.json; echo
           test "$(jq -r .build out.json)" = "$TF_VAR_build_sha"
-          test "$(jq -r .env out.json)" = "${{ inputs.env }}"
-          echo "### ${{ inputs.env }} is running build \`$TF_VAR_build_sha\`" >> "$GITHUB_STEP_SUMMARY"
+          test "$(jq -r .env out.json)" = "$ENV_NAME"
+          echo "### $ENV_NAME is running build \`$TF_VAR_build_sha\`" >> "$GITHUB_STEP_SUMMARY"

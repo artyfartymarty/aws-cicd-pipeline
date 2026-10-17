@@ -51,3 +51,9 @@ variable "lambda_security_group_ids" {
   type    = list(string)
   default = []
 }
+
+variable "artifact_version" {
+  description = "S3 version ID of the build's first upload (set by the pipeline)."
+  type        = string
+  default     = ""
+}

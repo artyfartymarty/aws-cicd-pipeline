@@ -65,11 +65,7 @@ variable "create_oidc_provider" {
 }
 
 variable "org_permissions_boundary_arn" {
-  description = <<-EOT
-    Boundary the account forces on every new role (the sandbox's yield-boundary).
-    When set, every role this stack and the pipeline create carries it, and the
-    per-env app boundaries are skipped (app roles carry this one instead).
-  EOT
+  description = "Boundary the account forces on new roles (the sandbox's yield-boundary). Applied to the base roles."
   type        = string
   default     = ""
 }
@@ -78,4 +74,26 @@ variable "lambda_in_vpc" {
   description = "Run app Lambdas in the private subnets (required where the account forbids non-VPC Lambdas, as the Yield sandbox does)."
   type        = bool
   default     = false
+}
+
+variable "prod_environments" {
+  description = "Environments that only the main-only OIDC role can deploy to. The runner never gets credentials for these."
+  type        = list(string)
+  default     = ["prod"]
+}
+
+variable "org_env_boundary_arns" {
+  description = <<-EOT
+    Per-env boundaries supplied by the account owner (sandbox: yield-dev-boundary,
+    yield-prod-boundary from sandbox-guardrails/). Each env's deploy role and all
+    roles it creates carry it. Envs not listed get a boundary created here.
+  EOT
+  type        = map(string)
+  default     = {}
+}
+
+variable "runner_version" {
+  description = "GitHub Actions runner version, pinned (https://github.com/actions/runner/releases)."
+  type        = string
+  default     = "2.328.0"
 }

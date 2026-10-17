@@ -4,13 +4,24 @@
     {
       "Sid": "EverythingButIdentityAndBilling",
       "Effect": "Allow",
-      "NotAction": ["iam:*", "organizations:*", "account:*", "sso:*", "identitystore:*"],
+      "NotAction": [
+        "iam:*",
+        "organizations:*",
+        "account:*",
+        "sso:*",
+        "identitystore:*"
+      ],
       "Resource": "*"
     },
     {
       "Sid": "ReadIam",
       "Effect": "Allow",
-      "Action": ["iam:Get*", "iam:List*", "iam:GenerateServiceLastAccessedDetails", "iam:SimulatePrincipalPolicy"],
+      "Action": [
+        "iam:Get*",
+        "iam:List*",
+        "iam:GenerateServiceLastAccessedDetails",
+        "iam:SimulatePrincipalPolicy"
+      ],
       "Resource": "*"
     },
     {
@@ -26,7 +37,9 @@
       ],
       "Resource": "arn:aws:iam::ACCOUNT_ID:role/yield-*",
       "Condition": {
-        "StringEquals": { "iam:PermissionsBoundary": "arn:aws:iam::ACCOUNT_ID:policy/yield-boundary" }
+        "StringEquals": {
+          "iam:PermissionsBoundary": "arn:aws:iam::ACCOUNT_ID:policy/yield-boundary"
+        }
       }
     },
     {
@@ -79,7 +92,10 @@
         "iam:TagOpenIDConnectProvider",
         "iam:DeleteOpenIDConnectProvider"
       ],
-      "Resource": "*"
+      "Resource": [
+        "arn:aws:iam::ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com",
+        "arn:aws:iam::ACCOUNT_ID:oidc-provider/api.bitbucket.org/*"
+      ]
     },
     {
       "Sid": "ServiceLinkedRoles",
@@ -88,9 +104,16 @@
       "Resource": "*"
     },
     {
-      "Sid": "NeverWeakenTheBoundary",
+      "Sid": "HandsOffPipelineRolesAndBoundaries",
       "Effect": "Deny",
       "Action": [
+        "iam:PutRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:DeleteRole",
+        "iam:PutRolePermissionsBoundary",
         "iam:DeleteRolePermissionsBoundary",
         "iam:CreatePolicyVersion",
         "iam:DeletePolicy",
@@ -98,8 +121,10 @@
         "iam:SetDefaultPolicyVersion"
       ],
       "Resource": [
-        "arn:aws:iam::ACCOUNT_ID:policy/yield-boundary",
-        "arn:aws:iam::ACCOUNT_ID:role/yield-*"
+        "arn:aws:iam::ACCOUNT_ID:role/yield-deploy-*",
+        "arn:aws:iam::ACCOUNT_ID:role/yield-ci*",
+        "arn:aws:iam::ACCOUNT_ID:role/yield-runner",
+        "arn:aws:iam::ACCOUNT_ID:policy/yield-*boundary"
       ]
     }
   ]

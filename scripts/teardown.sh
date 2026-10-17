@@ -11,6 +11,12 @@ ART_BUCKET="${PROJECT}-artifacts-${ACCOUNT_ID}"
 DUMMY_SHA=0000000000000000000000000000000000000000
 cd "$(dirname "$0")/.."
 
+TFV_PROJECT="$(sed -n 's/^[[:space:]]*project[[:space:]]*=[[:space:]]*"\(.*\)".*/\1/p' infra/platform/terraform.tfvars 2>/dev/null | head -1)"
+if [ -n "$TFV_PROJECT" ] && [ "$TFV_PROJECT" != "$PROJECT" ]; then
+  echo "terraform.tfvars says project = \"$TFV_PROJECT\" but PROJECT=$PROJECT. Re-run with PROJECT=$TFV_PROJECT." >&2
+  exit 1
+fi
+
 echo "This destroys dev + prod apps, the runner, VPC, artifacts and ALL state in account $ACCOUNT_ID ($REGION)."
 read -r -p "Type the project name ($PROJECT) to continue: " ok
 [ "$ok" = "$PROJECT" ] || { echo "Aborted."; exit 1; }

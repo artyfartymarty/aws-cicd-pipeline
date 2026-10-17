@@ -1,67 +1,69 @@
 # Yield sandbox guardrails
 
-Proposed access for the Yield team's sandbox AWS account: broad ("lax") access
-so the team can build freely, including their own VPCs and IAM roles, but
-**no path to or from the internet** and no way to escalate past the guardrails.
+Proposed access for the Yield team's sandbox AWS account. The team gets broad ("lax")
+access to build things, including their own VPCs and IAM roles. The account gets
+**no network path to the internet**, and nobody in it can weaken these rules.
 
-These are drafts for IT to review. Replace `ACCOUNT_ID` with the sandbox
-account ID before use.
+These are drafts for IT to review. Replace `ACCOUNT_ID` and `ORG_ID` before use.
+Diagrams are in `docs/vault/Sandbox guardrails.md`.
 
-| File | Who applies it | What it does |
+| File | Applied by | Purpose |
 |---|---|---|
-| `scp-no-internet.json` | IT, as an Organizations **SCP** on the sandbox account | Hard limits the team cannot remove, even as admins |
-| `yield-team-policy.json` | IT, on the team's SSO permission set or role | What the team can do day to day |
-| `yield-boundary.json` | IT creates it once as the IAM policy `yield-boundary` | Ceiling on every role the team creates. It is self-propagating: a role with it can create more roles only if they carry it too, so pipelines can create app roles without ever escaping it |
+| `scp-no-internet.json` | IT, as an Organizations **SCP** on the account | Hard limits nobody in the account can remove |
+| `rcp-no-outside-principals.json` | IT, as an Organizations **RCP** | Only principals in the org (and AWS services) can assume roles here |
+| `yield-team-policy.json` | IT, on the team's SSO permission set | Day-to-day access |
+| `yield-boundary.json` | IT creates it once as policy `yield-boundary` | Ceiling on every role the team creates; self-propagating |
+| `infra/platform` (repo root) | IT applies it once, like the StackSet at work | Pipeline roles, OIDC provider, per-env deploy roles and boundaries |
 
-## What the team CAN do
+## What the team can do
+- Everything in compute, data, storage, serverless and monitoring (like `PowerUserAccess`).
+- Create VPCs, subnets, route tables, security groups, and **AWS-owned** VPC endpoints,
+  so private workloads can still reach S3, DynamoDB, SSM and other AWS services.
+- Create IAM roles, policies and instance profiles named `yield-*`, as long as each role
+  carries `yield-boundary`. Roles under the boundary can do the same, and nothing more.
+- Create the GitHub or Bitbucket OIDC provider (only those two issuers).
 
-- Everything in compute, data, storage, serverless, monitoring, etc. (like AWS `PowerUserAccess`).
-- Create their own VPCs, subnets, route tables, security groups and **VPC endpoints**
-  (so private workloads can still reach S3, DynamoDB, SSM and other AWS services).
-- Create IAM roles, policies and instance profiles named `yield-*`, as long as
-  each role carries the `yield-boundary` permissions boundary.
-- Create an OIDC provider so CI (GitHub Actions or Bitbucket) can deploy without stored keys.
+## What nobody in the account can do (SCP)
+- Internet gateways, egress-only gateways, NAT, carrier gateways, the default VPC.
+- Elastic IPs or instances launched with a public IP.
+- VPN, Direct Connect, peering, Transit Gateway, Cloud WAN, VPC Lattice, accepting RAM
+  shares (a shared subnet from another account could have internet).
+- VPC endpoints to non-AWS PrivateLink services, or offering endpoint services.
+- Lambdas outside a VPC, and public Lambda URLs.
+- Managed services that call out to the internet: EventBridge API destinations,
+  Step Functions HTTP tasks, SNS HTTP/email/SMS subscriptions, App Runner, CloudShell,
+  SageMaker notebooks with direct internet.
+- IAM users and access keys, Organizations and account settings, billing changes,
+  reserved/savings purchases, domain registration, Marketplace.
+- Stopping or deleting CloudTrail, Config, GuardDuty or Security Hub.
+- Turning off account-level S3 Block Public Access.
 
-## What the team CANNOT do
+## What the team can't touch
+- The pipeline roles (`yield-deploy-*`, `yield-ci*`, `yield-runner`) and every `yield-*boundary`
+  policy. IT creates them through `infra/platform`, so the dev pipeline can never be
+  edited into a prod pipeline.
 
-- Create or attach internet gateways, egress-only gateways, NAT gateways, or carrier gateways.
-- Allocate Elastic IPs or launch instances with a public IP.
-- Connect the VPCs to anything outside the account: VPN, peering, Transit Gateway, Client VPN.
-- Run a Lambda outside a VPC (a non-VPC Lambda has internet access by default),
-  or expose a Lambda URL without authentication.
-- Create IAM users or access keys, touch Organizations, SSO or billing.
-- Remove the boundary from a role, or edit the boundary itself, so a role they
-  create can never be more powerful than the boundary.
-- Turn off the account-level S3 Block Public Access.
-
-## Before handing the account over (IT checklist)
-
-1. **Delete the default VPC in every region.** New accounts come with one that
-   already has an internet gateway, and the SCP only stops new ones being made.
+## IT checklist before handover
+1. **Delete the default VPC in every region.** New accounts come with one that already has an internet gateway.
 2. Turn on S3 Block Public Access at the account level.
-3. Create the `yield-boundary` policy, then attach the SCP and the team policy.
-4. If IT's own admin role needs to be exempt from the SCP, add
-   `"Condition": {"ArnNotLike": {"aws:PrincipalArn": "arn:aws:iam::*:role/<it-admin-role>"}}`
-   to each Deny statement.
+3. Create `yield-boundary`, then attach the SCP, the RCP and the team policy.
+4. Apply `infra/platform` with `infra/platform/sandbox.tfvars.example`.
+5. If IT's own admin role must be exempt from the SCP, add
+   `"ArnNotLike": {"aws:PrincipalArn": "arn:aws:iam::*:role/<it-admin-role>"}` to each Deny's condition.
+6. Test one Lambda env-var update after applying: the `lambda:VpcIds` condition on
+   `UpdateFunctionConfiguration` is AWS's documented pattern, but confirm it.
 
-## Known gaps (worth a conversation with IT)
-
-- **Inbound public endpoints** such as API Gateway, CloudFront and public
-  AppSync APIs are reachable from the internet without a VPC. If those should be
-  blocked too, add them to the SCP. Internet-facing load balancers already fail
-  because there is no internet gateway.
-- A few managed services can reach the internet from AWS's side (for example
-  CodeBuild without a VPC, or Glue jobs). If the rule is strictly "no outbound
-  internet from anything", list the services the team plans to use and IT can
-  add a deny or VPC condition for each.
-- Subnets can still be set to hand out public IPs (blocking that also breaks
-  normal subnet changes). It is harmless here: with no internet gateway, a
-  public IP has no route anywhere.
-
-## Effect on the pipeline in this repo
-
-With no internet gateway, a self-hosted runner inside the sandbox cannot reach
-GitHub. In the sandbox, the pipeline therefore runs on GitHub-hosted (or
-Bitbucket) runners and signs in to AWS with OIDC: a base role that can only
-assume the `yield-deploy-<env>` roles, the same role chain as the work diagrams.
-Lambdas are attached to the team's private VPC with free S3 and DynamoDB gateway endpoints.
+## Honest limits
+- **Dev and prod share one account, so people with team access can change prod by hand.**
+  The separation stops *pipelines*: the dev pipeline cannot read, write or create
+  anything in prod. If people must be kept out of prod too, prod needs its own account.
+- **Inbound** public endpoints (API Gateway, CloudFront, public AppSync) still work without
+  a VPC. Block them in the SCP if they shouldn't exist.
+- Some services still reach the internet from AWS's side, for example CodeBuild without
+  a VPC, Glue, SES, or SageMaker training jobs without network isolation. Before the team
+  uses one, add a deny or a VPC condition for it.
+- S3 and DynamoDB gateway endpoints without an endpoint policy can reach any account's
+  buckets in the region. Add endpoint policies with `aws:ResourceAccount` if exfiltration matters.
+- DNS queries still leave through the VPC resolver. Route 53 Resolver DNS Firewall closes that.
+- `ec2:VpceServiceOwner` and `sns:Protocol` are the condition keys I expect to work. Run
+  them through IAM Access Analyzer's policy validation before applying.

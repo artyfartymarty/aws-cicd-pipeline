@@ -24,7 +24,6 @@ provider "aws" {
       Environment = var.env
       ManagedBy   = "opentofu"
       Stack       = "app"
-      BuildSha    = var.build_sha
     }
   }
 }

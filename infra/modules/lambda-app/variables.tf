@@ -48,3 +48,9 @@ variable "security_group_ids" {
   type    = list(string)
   default = []
 }
+
+variable "artifact_version" {
+  description = "S3 version ID of the artifact. The pipeline passes the FIRST version ever uploaded for the build."
+  type        = string
+  default     = ""
+}

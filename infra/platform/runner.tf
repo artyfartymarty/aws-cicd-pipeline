@@ -19,10 +19,11 @@ resource "aws_instance" "runner" {
 
   user_data_replace_on_change = true
   user_data = templatefile("${path.module}/runner-user-data.sh.tftpl", {
-    project      = var.project
-    region       = var.region
-    github_repo  = var.github_repo
-    tofu_version = var.tofu_version
+    project        = var.project
+    region         = var.region
+    github_repo    = var.github_repo
+    tofu_version   = var.tofu_version
+    runner_version = var.runner_version
   })
 
   dynamic "instance_market_options" {

@@ -60,9 +60,43 @@
       "Resource": "arn:aws:iam::ACCOUNT_ID:role/yield-*"
     },
     {
-      "Sid": "NeverWeakenTheBoundary",
+      "Sid": "OwnPoliciesProfilesServiceRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreatePolicy",
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicy",
+        "iam:DeletePolicyVersion",
+        "iam:TagPolicy",
+        "iam:UntagPolicy",
+        "iam:CreateInstanceProfile",
+        "iam:DeleteInstanceProfile",
+        "iam:AddRoleToInstanceProfile",
+        "iam:RemoveRoleFromInstanceProfile",
+        "iam:TagInstanceProfile"
+      ],
+      "Resource": [
+        "arn:aws:iam::ACCOUNT_ID:policy/yield-*",
+        "arn:aws:iam::ACCOUNT_ID:instance-profile/yield-*"
+      ]
+    },
+    {
+      "Sid": "ServiceLinkedRoles",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "*"
+    },
+    {
+      "Sid": "HandsOffPipelineRolesAndBoundaries",
       "Effect": "Deny",
       "Action": [
+        "iam:PutRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:DeleteRole",
+        "iam:PutRolePermissionsBoundary",
         "iam:DeleteRolePermissionsBoundary",
         "iam:CreatePolicyVersion",
         "iam:DeletePolicy",
@@ -70,8 +104,10 @@
         "iam:SetDefaultPolicyVersion"
       ],
       "Resource": [
-        "arn:aws:iam::ACCOUNT_ID:policy/yield-boundary",
-        "arn:aws:iam::ACCOUNT_ID:role/yield-*"
+        "arn:aws:iam::ACCOUNT_ID:role/yield-deploy-*",
+        "arn:aws:iam::ACCOUNT_ID:role/yield-ci*",
+        "arn:aws:iam::ACCOUNT_ID:role/yield-runner",
+        "arn:aws:iam::ACCOUNT_ID:policy/yield-*boundary"
       ]
     }
   ]

@@ -54,15 +54,10 @@ platform-plan: platform-init ## Plan the runner, VPC, IAM, artifacts bucket
 platform-apply: platform-init ## Create/update them (asks for confirmation)
 	$(TOFU_PLATFORM) apply -var region=$(AWS_REGION) -var project=$(PROJECT)
 
-gh-vars: ## Create dev/prod GitHub Environments and set repo + per-env variables (needs gh CLI, run inside the repo)
+gh-vars: ## Set the repo variables the workflows read (needs gh CLI, run inside the repo)
 	@$(TOFU_PLATFORM) output -json github_variables | \
 	  python3 -c 'import json,sys;[print(k,v) for k,v in json.load(sys.stdin).items() if v]' | \
 	  while read -r k v; do gh variable set "$$k" --body "$$v"; done
-	@$(TOFU_PLATFORM) output -json github_environment_variables | \
-	  python3 -c 'import json,sys;[print(e,k,v) for e,d in json.load(sys.stdin).items() for k,v in d.items()]' | \
-	  while read -r e k v; do \
-	    gh api -X PUT "repos/{owner}/{repo}/environments/$$e" >/dev/null; \
-	    gh variable set "$$k" --env "$$e" --body "$$v"; done
 
 ## --- Day to day -------------------------------------------------------------
 runner-start: ## Start the runner (do this before you push)

@@ -16,6 +16,9 @@ mock_provider "aws" {
   mock_resource "aws_iam_role" {
     defaults = { arn = "arn:aws:iam::111111111111:role/mock" }
   }
+  mock_resource "aws_iam_policy" {
+    defaults = { arn = "arn:aws:iam::111111111111:policy/mock-boundary" }
+  }
   mock_resource "aws_iam_openid_connect_provider" {
     defaults = { arn = "arn:aws:iam::111111111111:oidc-provider/token.actions.githubusercontent.com" }
   }
@@ -91,6 +94,10 @@ run "sandbox_mode_has_no_internet_path" {
     runner_mode                  = "github-oidc"
     lambda_in_vpc                = true
     org_permissions_boundary_arn = "arn:aws:iam::111111111111:policy/yield-boundary"
+    org_env_boundary_arns = {
+      dev  = "arn:aws:iam::111111111111:policy/yield-dev-boundary"
+      prod = "arn:aws:iam::111111111111:policy/yield-prod-boundary"
+    }
   }
 
   assert {
@@ -106,12 +113,8 @@ run "sandbox_mode_has_no_internet_path" {
     error_message = "The OIDC role must exist and carry the org boundary."
   }
   assert {
-    condition     = alltrue([for r in aws_iam_role.deploy : r.permissions_boundary == var.org_permissions_boundary_arn])
-    error_message = "Deploy roles must carry the org boundary."
-  }
-  assert {
-    condition     = length(aws_iam_policy.app_boundary) == 0
-    error_message = "Per-env app boundaries are replaced by the org boundary."
+    condition     = aws_iam_role.deploy["dev"].permissions_boundary == "arn:aws:iam::111111111111:policy/yield-dev-boundary"
+    error_message = "The dev deploy role must carry the dev boundary IT supplies."
   }
   assert {
     condition     = length(aws_subnet.private) == 2 && length(aws_vpc_endpoint.dynamodb.route_table_ids) == 1
@@ -127,5 +130,44 @@ run "oidc_trusts_only_this_repo" {
   assert {
     condition     = output.github_variables.RUNS_ON == "\"ubuntu-latest\""
     error_message = "OIDC mode should run on GitHub-hosted runners."
+  }
+}
+
+run "runner_can_never_reach_prod" {
+  command = plan
+
+  override_resource {
+    target = aws_iam_role.ci_prod
+    values = { arn = "arn:aws:iam::111111111111:role/cicd-lab-ci-prod" }
+  }
+  override_resource {
+    target = aws_iam_role.runner
+    values = { arn = "arn:aws:iam::111111111111:role/cicd-lab-runner" }
+  }
+
+  assert {
+    condition     = one(one(data.aws_iam_policy_document.deploy_assume["prod"].statement).principals).identifiers == toset(["arn:aws:iam::111111111111:role/cicd-lab-ci-prod"])
+    error_message = "Prod deploy role must trust only the main-only OIDC role."
+  }
+  assert {
+    condition     = one(one(data.aws_iam_policy_document.deploy_assume["dev"].statement).principals).identifiers == toset(["arn:aws:iam::111111111111:role/cicd-lab-runner"])
+    error_message = "Dev deploy role should trust the runner in ec2 mode."
+  }
+  assert {
+    condition = alltrue([
+      for st in data.aws_iam_policy_document.nonprod_base.statement :
+      alltrue([for r in st.resources : !strcontains(r, "prod")])
+    ])
+    error_message = "The runner / non-prod base role must not reference any prod resource."
+  }
+  assert {
+    condition = one([
+      for c in one(data.aws_iam_policy_document.github_main_only.statement).condition : c.values if c.variable == "token.actions.githubusercontent.com:sub"
+    ]) == tolist(["repo:artyfartymarty/aws-cicd-pipeline:ref:refs/heads/main"])
+    error_message = "Prod OIDC role must be limited to the main branch."
+  }
+  assert {
+    condition     = aws_ssm_parameter.env_config["prod"].name == "/cicd-lab/env/prod/config"
+    error_message = "Per-env config must be in SSM."
   }
 }

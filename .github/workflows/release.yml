@@ -36,8 +36,10 @@ jobs:
           if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::build_sha must be a full 40-character SHA."; exit 1
           fi
-          if ! git merge-base --is-ancestor "$SHA" origin/main; then
-            echo "::error::$SHA is not on main. Only main can go to prod."; exit 1
+          # First-parent only: the commit must have been main's HEAD at some
+          # point (a merge result), not a feature-branch commit merged into it.
+          if ! git rev-list --first-parent origin/main | grep -qxF "$SHA"; then
+            echo "::error::$SHA was never the tip of main. Only builds of main can go to prod."; exit 1
           fi
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
   dev:

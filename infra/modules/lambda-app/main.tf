@@ -79,6 +79,11 @@ resource "aws_lambda_function" "app" {
   # Same artifact in every env: only the env vars differ (like appConfig at work).
   s3_bucket = var.artifact_bucket
   s3_key    = var.artifact_key
+  # Pin the exact object version, so a later upload to the same key can't
+  # change what gets deployed.
+  s3_object_version = var.artifact_version != "" ? var.artifact_version : null
+
+  tags = { BuildSha = var.build_sha }
 
   environment {
     variables = {

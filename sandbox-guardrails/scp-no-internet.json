@@ -97,6 +97,88 @@
         "iam:CreateLoginProfile"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "OnlyAwsOwnedVpcEndpoints",
+      "Effect": "Deny",
+      "Action": "ec2:CreateVpcEndpoint",
+      "Resource": "arn:aws:ec2:*:*:vpc-endpoint/*",
+      "Condition": {
+        "StringNotEquals": {
+          "ec2:VpceServiceOwner": "amazon"
+        }
+      }
+    },
+    {
+      "Sid": "NoOtherWaysOut",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:CreateVpcEndpointServiceConfiguration",
+        "ram:AcceptResourceShareInvitation",
+        "vpc-lattice:*",
+        "networkmanager:*",
+        "directconnect:*",
+        "events:CreateApiDestination",
+        "events:CreateConnection",
+        "states:InvokeHTTPEndpoint",
+        "apprunner:*",
+        "cloudshell:*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "NoHttpOrEmailSubscriptions",
+      "Effect": "Deny",
+      "Action": "sns:Subscribe",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "sns:Protocol": [
+            "http",
+            "https",
+            "email",
+            "email-json",
+            "sms"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "NoPurchasesOrBilling",
+      "Effect": "Deny",
+      "Action": [
+        "aws-portal:Modify*",
+        "billing:Put*",
+        "billing:Update*",
+        "account:*",
+        "organizations:*",
+        "savingsplans:CreateSavingsPlan",
+        "ec2:PurchaseReservedInstancesOffering",
+        "ec2:PurchaseHostReservation",
+        "rds:PurchaseReservedDBInstancesOffering",
+        "elasticache:PurchaseReservedCacheNodesOffering",
+        "route53domains:RegisterDomain",
+        "route53domains:TransferDomain",
+        "marketplace:*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "NoAuditTampering",
+      "Effect": "Deny",
+      "Action": [
+        "cloudtrail:StopLogging",
+        "cloudtrail:DeleteTrail",
+        "cloudtrail:UpdateTrail",
+        "cloudtrail:PutEventSelectors",
+        "config:StopConfigurationRecorder",
+        "config:DeleteConfigurationRecorder",
+        "config:DeleteDeliveryChannel",
+        "guardduty:DeleteDetector",
+        "guardduty:UpdateDetector",
+        "securityhub:DisableSecurityHub"
+      ],
+      "Resource": "*"
     }
   ]
 }

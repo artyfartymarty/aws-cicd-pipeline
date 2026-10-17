@@ -84,3 +84,14 @@ run "sandbox_lambda_runs_in_private_subnets" {
     error_message = "Lambda must be attached to the private subnets when they are given."
   }
 }
+
+run "pins_the_artifact_version" {
+  command = plan
+  variables {
+    artifact_version = "3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+  }
+  assert {
+    condition     = module.app.s3_object_version == "3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+    error_message = "Lambda must deploy the pinned object version."
+  }
+}
