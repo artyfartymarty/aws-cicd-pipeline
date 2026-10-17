@@ -1,0 +1,46 @@
+# Cheap checks on GitHub-hosted runners (free minutes, no AWS access, no AWS cost).
+# Runs on every PR and every push to a non-main branch; the main pipeline and
+# Deploy to Dev call it first too.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  TOFU_VERSION: "1.12.0"
+
+jobs:
+  test:
+    name: Unit tests + IaC checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python unit tests
+        run: |
+          pip install -r app/requirements-dev.txt
+          pytest -q app/tests
+
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+      - name: tofu fmt
+        run: tofu fmt -check -recursive infra
+      - name: tofu validate + test (mocked AWS, offline)
+        run: |
+          for stack in infra/modules/lambda-app infra/platform infra/app; do
+            echo "::group::$stack"
+            tofu -chdir="$stack" init -backend=false -input=false
+            tofu -chdir="$stack" validate
+            tofu -chdir="$stack" test
+            echo "::endgroup::"
+          done

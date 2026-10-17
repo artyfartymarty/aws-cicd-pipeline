@@ -1,0 +1,22 @@
+# The "Deploy to Dev" button: Actions > Deploy to Dev > Run workflow, pick any branch.
+# No ticket needed, same as at work.
+name: Deploy to Dev
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+  build:
+    needs: ci
+    uses: ./.github/workflows/_build.yml
+  dev:
+    needs: build
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      env: dev
+      build_sha: ${{ needs.build.outputs.build_sha }}

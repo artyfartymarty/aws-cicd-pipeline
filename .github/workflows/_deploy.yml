@@ -1,0 +1,106 @@
+# Layer 2 pipeline template: init -> plan -> (approve) -> apply for one build in
+# one environment. Callers pass env + build_sha, and apply: false for a preview.
+# Later this file can live in its own repo and be pinned by tag, e.g.
+#   uses: <you>/pipeline-templates/.github/workflows/_deploy.yml@v1
+# Runs on the self-hosted runner. The runner's instance role assumes this env's
+# deploy role (DEPLOY_ROLE_ARN, a GitHub Environment variable), so a dev run
+# physically cannot touch prod resources. No AWS keys are stored in GitHub.
+name: deploy (template)
+
+on:
+  workflow_call:
+    inputs:
+      env:
+        required: true
+        type: string
+      build_sha:
+        required: true
+        type: string
+      apply:
+        description: false = plan only (a preview, no changes)
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: ${{ inputs.apply && 'Deploy' || 'Plan' }} ${{ inputs.env }}
+    runs-on: [self-hosted, aws]
+    # GitHub Environment: shows deployments per env, and applies any protection
+    # rules you add to it (required reviewers need a public repo or a paid plan).
+    environment: ${{ inputs.env }}
+    concurrency:
+      group: deploy-${{ inputs.env }}
+      cancel-in-progress: false
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      TF_IN_AUTOMATION: "1"
+      TF_VAR_env: ${{ inputs.env }}
+      TF_VAR_build_sha: ${{ inputs.build_sha }}
+      TF_VAR_region: ${{ vars.AWS_REGION }}
+      TF_VAR_project: ${{ vars.PROJECT }}
+      TF_VAR_artifact_bucket: ${{ vars.ARTIFACT_BUCKET }}
+      TF_VAR_app_boundary_arn: ${{ vars.APP_BOUNDARY_ARN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The "Production Authorization" check: prod only from main, only by listed people.
+      - name: Production authorization
+        if: inputs.env == 'prod'
+        env:
+          WHO: ${{ github.triggering_actor }}
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Prod deploys must run from main (this run is on $GITHUB_REF)."; exit 1
+          fi
+          if ! grep -v '^#' .github/PROD_APPROVERS | grep -qxF "$WHO"; then
+            echo "::error::$WHO is not in .github/PROD_APPROVERS, so cannot deploy to prod."; exit 1
+          fi
+          echo "$WHO is authorized for prod."
+
+      # Both tofu and the AWS CLI read this profile: instance role -> deploy role.
+      - name: Use the ${{ inputs.env }} deploy role
+        env:
+          ROLE_ARN: ${{ vars.DEPLOY_ROLE_ARN }}
+        run: |
+          test -n "$ROLE_ARN" || { echo "::error::DEPLOY_ROLE_ARN is not set on the ${{ inputs.env }} environment. Run make gh-vars."; exit 1; }
+          CFG="$RUNNER_TEMP/aws-config"
+          printf '[profile deploy]\nrole_arn = %s\ncredential_source = Ec2InstanceMetadata\nrole_session_name = gh-%s-%s\nregion = %s\n' \
+            "$ROLE_ARN" "${{ inputs.env }}" "$GITHUB_RUN_ID" "$AWS_REGION" > "$CFG"
+          { echo "AWS_CONFIG_FILE=$CFG"; echo "AWS_PROFILE=deploy"; } >> "$GITHUB_ENV"
+
+      - name: Who am I
+        run: aws sts get-caller-identity --query Arn --output text
+
+      - name: Check the build exists
+        run: aws s3api head-object --bucket "$TF_VAR_artifact_bucket" --key "builds/$TF_VAR_build_sha/app.zip" >/dev/null
+
+      - name: tofu init
+        run: |
+          tofu -chdir=infra/app init -input=false \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=app/${{ inputs.env }}.tfstate" \
+            -backend-config="region=$AWS_REGION"
+
+      - name: tofu plan
+        run: |
+          tofu -chdir=infra/app plan -input=false -no-color -out=tfplan | tee plan.txt
+          { echo "### Plan for ${{ inputs.env }} (build \`$TF_VAR_build_sha\`)"; echo '```'; grep -E '^(Plan:|No changes)|will be|must be' plan.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: tofu apply
+        if: inputs.apply
+        run: tofu -chdir=infra/app apply -input=false tfplan
+
+      - name: Smoke test
+        if: inputs.apply
+        run: |
+          FN="$(tofu -chdir=infra/app output -raw function_name)"
+          aws lambda invoke --function-name "$FN" --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"health"}' out.json >/dev/null
+          cat out.json; echo
+          test "$(jq -r .build out.json)" = "$TF_VAR_build_sha"
+          test "$(jq -r .env out.json)" = "${{ inputs.env }}"
+          echo "### ${{ inputs.env }} is running build \`$TF_VAR_build_sha\`" >> "$GITHUB_STEP_SUMMARY"

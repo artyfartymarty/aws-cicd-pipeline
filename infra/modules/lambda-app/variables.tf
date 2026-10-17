@@ -1,0 +1,39 @@
+variable "name_prefix" {
+  description = "Prefix for every resource, e.g. cicd-lab-dev. Must match the deploy role's scope."
+  type        = string
+}
+
+variable "env" {
+  type = string
+}
+
+variable "build_sha" {
+  type = string
+}
+
+variable "artifact_bucket" {
+  type = string
+}
+
+variable "artifact_key" {
+  type = string
+}
+
+variable "permissions_boundary_arn" {
+  type = string
+}
+
+variable "deletion_protection" {
+  type    = bool
+  default = false
+}
+
+variable "memory_mb" {
+  type    = number
+  default = 128
+}
+
+variable "log_retention_days" {
+  type    = number
+  default = 7
+}

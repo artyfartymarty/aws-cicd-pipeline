@@ -1,0 +1,53 @@
+# The manual APPROVE step (stands in for the Jira Ops subtask): promote, or roll
+# back to, a build that is on main. It goes dev -> prod in order, no skipping,
+# and only people in .github/PROD_APPROVERS can get past the prod step.
+# Actions > Release build > Run workflow (branch: main) > paste the build SHA,
+# which is the merge commit SHA shown in the Main pipeline run.
+name: Release build
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_sha:
+        description: Full commit SHA of a build on main
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      build_sha: ${{ steps.check.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: check
+        env:
+          SHA: ${{ inputs.build_sha }}
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Run this workflow from main."; exit 1
+          fi
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::build_sha must be a full 40-character SHA."; exit 1
+          fi
+          if ! git merge-base --is-ancestor "$SHA" origin/main; then
+            echo "::error::$SHA is not on main. Only main can go to prod."; exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+  dev:
+    needs: verify
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      env: dev
+      build_sha: ${{ needs.verify.outputs.build_sha }}
+  prod:
+    needs: [verify, dev]
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      env: prod
+      build_sha: ${{ needs.verify.outputs.build_sha }}

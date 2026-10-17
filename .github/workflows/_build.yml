@@ -1,0 +1,39 @@
+# Shared template: package the app once and store it as builds/<sha>/app.zip.
+# Stand-in for publishing to JFrog. A build that already exists is never overwritten.
+name: build (template)
+
+on:
+  workflow_call:
+    outputs:
+      build_sha:
+        description: Commit SHA that identifies this build
+        value: ${{ jobs.build.outputs.build_sha }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: [self-hosted, aws]
+    outputs:
+      build_sha: ${{ steps.meta.outputs.sha }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ARTIFACT_BUCKET: ${{ vars.ARTIFACT_BUCKET }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: meta
+        run: echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Package and upload
+        run: |
+          KEY="builds/$GITHUB_SHA/app.zip"
+          if aws s3api head-object --bucket "$ARTIFACT_BUCKET" --key "$KEY" >/dev/null 2>&1; then
+            echo "Build $GITHUB_SHA already exists, reusing it."
+            exit 0
+          fi
+          mkdir -p dist
+          (cd app/src && zip -qr -X ../../dist/app.zip . -x '__pycache__/*')
+          aws s3api put-object --bucket "$ARTIFACT_BUCKET" --key "$KEY" --body dist/app.zip \
+            --metadata "branch=$GITHUB_REF_NAME,run=$GITHUB_RUN_NUMBER,actor=$GITHUB_ACTOR" >/dev/null
+          echo "### Build \`$GITHUB_SHA\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Uploaded s3://$ARTIFACT_BUCKET/$KEY from \`$GITHUB_REF_NAME\`" >> "$GITHUB_STEP_SUMMARY"

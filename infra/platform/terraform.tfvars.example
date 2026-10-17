@@ -1,0 +1,5 @@
+# Copy to terraform.tfvars and fill in.
+github_repo = "artyfartymarty/aws-cicd-pipeline"
+# region      = "us-east-1"
+# use_spot    = true
+# instance_type = "t4g.micro"

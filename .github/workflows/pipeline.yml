@@ -1,0 +1,35 @@
+# Merge to main: CI, build once, apply to dev, then show what prod WOULD change.
+# Prod itself only changes through the "Release build" workflow (the manual
+# APPROVE step), which deploys this same build dev -> prod.
+name: Main pipeline
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: main-pipeline
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+  build:
+    needs: ci
+    uses: ./.github/workflows/_build.yml
+  dev:
+    needs: build
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      env: dev
+      build_sha: ${{ needs.build.outputs.build_sha }}
+  prod-preview:
+    needs: [build, dev]
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      env: prod
+      build_sha: ${{ needs.build.outputs.build_sha }}
+      apply: false

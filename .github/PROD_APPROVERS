@@ -1,0 +1,4 @@
+# GitHub logins allowed to deploy to prod (one per line).
+# Mirrors the "Production Authorization" check at work: anyone not listed is blocked,
+# even a repo admin clicking "Run workflow".
+artyfartymarty
