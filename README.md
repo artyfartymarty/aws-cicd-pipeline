@@ -63,6 +63,7 @@ infra/app/                   Layer 3 pattern, applied by the pipeline per env
 infra/platform/              runner, VPC, IAM roles, artifact bucket (you apply this)
 .github/workflows/           ci, _build, _deploy (templates), deploy-dev, pipeline, release
 scripts/                     bootstrap-state, runner-power, teardown
+sandbox-guardrails/          draft SCP + team policy + boundary for the Yield sandbox account
 ```
 
 ## Test locally first (free)

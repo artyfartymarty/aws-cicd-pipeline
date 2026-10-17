@@ -1,0 +1,82 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "NoInternetPaths",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:CreateInternetGateway",
+        "ec2:AttachInternetGateway",
+        "ec2:CreateEgressOnlyInternetGateway",
+        "ec2:CreateNatGateway",
+        "ec2:CreateCarrierGateway",
+        "ec2:CreateDefaultVpc",
+        "ec2:CreateDefaultSubnet",
+        "ec2:AllocateAddress",
+        "ec2:AssociateAddress",
+        "ec2:ModifySubnetAttribute",
+        "ec2:CreateVpnGateway",
+        "ec2:AttachVpnGateway",
+        "ec2:CreateCustomerGateway",
+        "ec2:CreateVpnConnection",
+        "ec2:CreateClientVpnEndpoint",
+        "ec2:CreateVpcPeeringConnection",
+        "ec2:AcceptVpcPeeringConnection",
+        "ec2:CreateTransitGateway",
+        "ec2:CreateTransitGatewayVpcAttachment",
+        "ec2:AcceptTransitGatewayVpcAttachment",
+        "globalaccelerator:*",
+        "lightsail:*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "NoPublicIpOnLaunch",
+      "Effect": "Deny",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:*:*:network-interface/*",
+      "Condition": {
+        "Bool": { "ec2:AssociatePublicIpAddress": "true" }
+      }
+    },
+    {
+      "Sid": "LambdaMustRunInAVpc",
+      "Effect": "Deny",
+      "Action": ["lambda:CreateFunction", "lambda:UpdateFunctionConfiguration"],
+      "Resource": "*",
+      "Condition": {
+        "Null": { "lambda:VpcIds": "true" }
+      }
+    },
+    {
+      "Sid": "NoPublicLambdaUrls",
+      "Effect": "Deny",
+      "Action": ["lambda:CreateFunctionUrlConfig", "lambda:UpdateFunctionUrlConfig"],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": { "lambda:FunctionUrlAuthType": "NONE" }
+      }
+    },
+    {
+      "Sid": "NoSageMakerDirectInternet",
+      "Effect": "Deny",
+      "Action": "sagemaker:CreateNotebookInstance",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": { "sagemaker:DirectInternetAccess": "Enabled" }
+      }
+    },
+    {
+      "Sid": "KeepS3PublicAccessBlocked",
+      "Effect": "Deny",
+      "Action": ["s3:PutAccountPublicAccessBlock", "s3:DeleteAccountPublicAccessBlock"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "NoLongLivedKeysOrUsers",
+      "Effect": "Deny",
+      "Action": ["iam:CreateUser", "iam:CreateAccessKey", "iam:CreateLoginProfile"],
+      "Resource": "*"
+    }
+  ]
+}
