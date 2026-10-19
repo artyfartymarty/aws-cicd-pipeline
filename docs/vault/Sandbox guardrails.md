@@ -26,6 +26,8 @@ Honest limits are in `sandbox-guardrails/README.md`. The main one: dev and prod 
 
 **Who applies what (Brian, 2026-10-17):** IT applies `infra/platform`, not the team. That is what keeps the pipeline roles out of the team's reach.
 
+**Pending (2026-10-19):** if IT attaches the sandbox VPC to work's Transit Gateway, the SCP's Transit Gateway deny needs an exception for IT's attachment only. See [[Runners]].
+
 The team can still build VPCs, subnets, security groups and VPC endpoints, and create IAM roles named `yield-*`.
 
 Related: [[Network]], [[IAM role chain]], [[Review findings]].

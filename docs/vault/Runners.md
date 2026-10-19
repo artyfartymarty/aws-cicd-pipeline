@@ -44,4 +44,16 @@ Use **option 1** for the sandbox now: it works on day one, costs nothing, and is
 
 **Decision (2026-10-17):** option 1, OIDC with hosted runners, for the sandbox. Chosen as the default while Brian was away; he can overrule it. Option 2 stays a later exercise.
 
+## Update 2026-10-19: work offers a private route (pending)
+Brian's SRE friend says work will route from its runners (Tools account, the network hub between on-prem and the cloud) to the sandbox VPC. That is option 2 with work's own runners, so Q1 is open again. Nothing below is decided yet.
+
+- **A route carries traffic, not AWS credentials.** Deploys call AWS APIs, so the route is for reaching private things in the VPC (for example a smoke test against a private service).
+- **Proposed (Claude, Q7, not yet answered):** keep Bitbucket OIDC for credentials and use the route only for private traffic. If the runner's own IAM role assumed sandbox roles instead, prod could no longer be told apart by the deployment environment UUID. Unverified: whether self-hosted Bitbucket runners still get OIDC tokens.
+- **To confirm with the SRE friend:**
+  1. Mechanism and owner (likely a Transit Gateway attachment into the sandbox VPC).
+  2. The sandbox VPC CIDR IT allocates. Ours defaults to `10.20.0.0/16`, which may overlap work ranges.
+  3. Whether the sandbox route table gets only on-prem and Tools ranges, or a default route through the Palo Altos. A default route would give the sandbox internet.
+  4. How runners authenticate into the sandbox account (OIDC or the runner's IAM role).
+- **Conflicts with [[Sandbox guardrails]]:** the SCP denies Transit Gateway attachments, peering and VPN. IT would need an exception scoped to their attachment.
+
 Related: [[IAM role chain]], [[Network]], [[Sandbox guardrails]].

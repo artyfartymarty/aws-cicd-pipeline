@@ -28,3 +28,4 @@ flowchart TB
 - No NAT gateway (about $33/month) and no interface endpoints (about $7/month each per AZ).
 - In `github-oidc` mode, only the private side exists. That is what the [[Sandbox guardrails]] require.
 - At work, egress goes through Transit Gateway and Palo Alto firewalls instead (see [[Runners]]).
+- **Pending (2026-10-19):** work may attach the sandbox VPC to its network so its runners reach it privately. The sandbox VPC then needs a CIDR from IT, and its route table must not get a default route, or the no-internet rule breaks. See [[Runners#Update 2026-10-19: work offers a private route (pending)]].
