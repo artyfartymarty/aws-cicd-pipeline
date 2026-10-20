@@ -10,7 +10,7 @@ Back to [[00 Home]]. Sources: [[Work pattern]] and [[My pattern]]. This compares
 | Bitbucket Cloud | GitHub | ✅ equivalent |
 | Dynamic Pipelines shared templates, labels in `bitbucket-pipelines.yml` | Reusable workflows (`workflow_call`), thin caller workflows | ✅ same idea; templates still live in the same repo (move out later) |
 | Layer 1 module registry, git-tag versioned | `infra/modules/lambda-app` | 🟡 one module, not yet a separate tagged repo |
-| Layer 2 IACM pipeline: init → plan → APPROVE → apply | `_deploy.yml`: init → plan → apply; prod approval = Release build + `PROD_APPROVERS` | 🟡 approval is a manual run, not a pause in the same run (that needs GitHub Pro) |
+| Layer 2 IACM pipeline: init → plan → APPROVE → apply | `_deploy.yml`: init → plan → apply; prod approval = merging the release PR + `PROD_APPROVERS` | 🟡 approval is a manual run, not a pause in the same run (that needs GitHub Pro) |
 | Layer 3 pattern repos | `infra/app` | 🟡 in the same repo |
 | Autobahn scaffolder | Nothing yet (plan: GitHub template repo + a script) | ❌ |
 | EKS self-hosted runners, autoscaled, `size` label | One Spot EC2 runner (`ec2` mode) or GitHub-hosted (`github-oidc` mode) | 🟡 no autoscaling, no sizes |
@@ -19,9 +19,9 @@ Back to [[00 Home]]. Sources: [[Work pattern]] and [[My pattern]]. This compares
 | Provisioner roles pre-created by StackSet | Created by `infra/platform` (you or IT apply it once) | ✅ equivalent |
 | IACM workspaces dev/test/prod | State files `app/dev.tfstate`, `app/prod.tfstate` | ✅ equivalent; add `test` with one variable |
 | Envs DEV → TEST → QA → PSUP → PROD | dev → prod | 🟡 fewer envs (cost); list is a variable |
-| Branches → dev/test only, `main` → higher envs | Any branch → dev; only `main` SHAs → prod | ✅ |
+| Branches → dev/test only, `main` → higher envs | `dev` → dev; only builds a release PR brought into `main` → prod ([[Branching and releases]]) | ✅ |
 | Same build number promoted in order, no skipping | Same S3 object (`builds/<sha>`) promoted dev → prod, prod needs dev first | ✅ |
-| Jira Ops subtask (`repoSlug`, `branch`, `build`) | Release build workflow input `build_sha` | 🟡 no ticket system |
+| Jira Ops subtask (`repoSlug`, `branch`, `build`) | Release PR `dev` → `main`; Roll back prod input `build_sha` | 🟡 no ticket system |
 | `svc-autobahn` service account + Production Authorization | `PROD_APPROVERS` allow-list check | 🟡 workflow-level check; see [[Review findings]] |
 | JFrog Artifactory + proxy, ECR | S3 artifact bucket | 🟡 no package proxy; no container images |
 | Sonar quality gate | None | ❌ (SonarCloud is free for public repos only) |
@@ -48,7 +48,7 @@ flowchart LR
     M3[GitHub-hosted + OIDC - github-oidc mode]
     M4[S3 artifacts]
     M5[SSM Parameter Store]
-    M6[Release build + PROD_APPROVERS]
+    M6[Release PR + PROD_APPROVERS]
     M7[infra/modules folder]
   end
   W1 --> M1

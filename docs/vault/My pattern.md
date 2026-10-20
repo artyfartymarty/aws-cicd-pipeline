@@ -11,7 +11,7 @@ What `aws-cicd-pipeline` builds. Back to [[00 Home]]. Mapped against work in [[M
 |---|---|---|
 | 1 Modules | `infra/modules/lambda-app` | its own repo, pinned by git tag (`?ref=v1.2.0`) |
 | 2 Pipeline template | `.github/workflows/_build.yml`, `_deploy.yml` (`workflow_call`) | its own repo, pinned `uses: ...@v1` |
-| 3 Pattern | `infra/app` + thin caller workflows `deploy-dev.yml`, `pipeline.yml`, `release.yml` | one repo per team service, made from a GitHub template repo |
+| 3 Pattern | `infra/app` + thin caller workflows `deploy-dev.yml`, `pipeline.yml`, `release.yml`, `rollback.yml` | one repo per team service, made from a GitHub template repo |
 | Platform | `infra/platform`: VPC, base role, deploy roles, artifact bucket, (runner) | pre-created by IT in the sandbox, like the StackSet |
 
 ## Components
@@ -60,8 +60,8 @@ See [[Runners]] for the reasoning.
 
 ## Pipelines
 - CI on every push and PR: pytest, `tofu fmt`, `tofu validate`, `tofu test` with a mocked AWS. Free, no AWS access.
-- **Deploy to Dev** from any branch. See [[Dev deploy sequence]].
-- Merge to `main`: build once, deploy dev, plan-only preview of prod.
-- **Release build** (from `main`, by someone in `PROD_APPROVERS`): same build, dev then prod. See [[Prod release sequence]].
+- Merge a PR into `dev`: build once, deploy dev. **Deploy to Dev** stays as an optional button for any branch. See [[Dev deploy sequence]].
+- Merge the release PR (`dev` into `main`, by someone in `PROD_APPROVERS`): the same build goes to prod, then a `vX.Y.Z` tag and GitHub release. See [[Prod release sequence]] and [[Branching and releases]].
+- **Roll back prod** (from `main`): an older released build, dev then prod.
 
 Related: [[IAM role chain]], [[Network]], [[Config outside the repo]], [[Cost]].

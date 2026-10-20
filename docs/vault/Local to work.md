@@ -39,8 +39,12 @@ flowchart TB
 | Reusable workflow `_deploy.yml` (`workflow_call`) | YAML anchor `&deploy-dev` / `&deploy-prod`; at work, a **Dynamic Pipelines** template owned by DevOps |
 | `ci.yml` on push | `default:` pipeline |
 | `deploy-dev.yml` (`workflow_dispatch`) | `custom: deploy-to-dev` (Run pipeline) |
-| `pipeline.yml` (push to `main`) | `branches: main` |
-| `release.yml` with input `build_sha` | `custom: release-build` with variable `BUILD_SHA` |
+| `pipeline.yml` (push to `dev`) | `branches: dev` |
+| `release.yml` (push to `main`: prod, then tag) | `branches: main` (prod step `trigger: automatic`, then `tag-release`) |
+| `rollback.yml` with input `build_sha` | `custom: rollback-prod` with variable `BUILD_SHA` |
+| `pr-rules.yml` (only `dev` into `main`, PR title) | merge checks + branch restrictions; prod refuses non-`dev` merges |
+| GitHub release (notes = PR list) | annotated tag, message = PR list |
+| `.github/CODEOWNERS` | `.bitbucket/CODEOWNERS` |
 | `needs:` | Step order (steps run in sequence) |
 | `runs-on: ubuntu-latest` | Atlassian-hosted runner (default) |
 | `runs-on: [self-hosted, aws]` (my EC2 runner) | `runs-on: [self.hosted, linux, ...]` (work's EKS runners) |
@@ -50,7 +54,7 @@ flowchart TB
 | OIDC `sub` = `repo:<owner>/<repo>:ref:refs/heads/main` | OIDC `sub` = `{repo-uuid}[:{env-uuid}]:{step-uuid}` |
 | Prod gate: IAM trusts only `refs/heads/main` | Prod gate: IAM trusts only the **prod deployment env**; Bitbucket allows only `main` to use it |
 | `concurrency: deploy-<env>` | Deployment environments serialise deploys |
-| Approval: a manual **Release build** run | `trigger: manual` on the prod step (the **Deploy** button) |
+| Approval: merging the release PR | merging the release PR (merge checks: 1 approval, passing build) |
 | `.github/PROD_APPROVERS` (logins) | `.bitbucket/PROD_APPROVERS` (user UUIDs) |
 | `github.sha`, `GITHUB_REF_NAME`, `github.triggering_actor` | `BITBUCKET_COMMIT`, `BITBUCKET_BRANCH`, `BITBUCKET_STEP_TRIGGERER_UUID` |
 | `$GITHUB_STEP_SUMMARY` | Step log only |
@@ -74,7 +78,7 @@ flowchart TB
 | OpenTofu runs in | The CI step (`deploy.sh`) | The CI step (`deploy.sh`) | Harness IACM workspaces |
 | Artifacts | S3 `builds/<sha>` | S3 `builds/<sha>` | JFrog + ECR |
 | Per-env config | SSM | SSM | Config Graph `infraConfig`, Compass, SSM |
-| Prod approval | Release build + `PROD_APPROVERS` | Manual prod step + deployment permissions + `PROD_APPROVERS` | Jira Ops subtask + Production Authorization |
+| Prod approval | Release PR merge + `PROD_APPROVERS` | Release PR merge + deployment permissions + `PROD_APPROVERS` | Jira Ops subtask + Production Authorization |
 
 If the Yield team later moves onto the golden path, `deploy.sh` steps 4 and 5 (init/plan/apply, smoke test) become the Harness IACM pipeline, and the shared `build.sh` becomes a JFrog publish. The IAM shape stays the same; only the trusted issuer changes.
 

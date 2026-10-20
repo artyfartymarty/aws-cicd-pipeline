@@ -1,0 +1,4 @@
+# Who must review what (GitHub). Every PR asks these owners for a review.
+# Requiring their approval needs branch protection, which private repos only
+# get on GitHub Pro, so on Free this only requests the review.
+*       @artyfartymarty

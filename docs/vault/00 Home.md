@@ -11,6 +11,7 @@ Open this folder (`docs/vault`) as an Obsidian vault. Diagrams are Mermaid, whic
 - [[Yield work pattern]]: the pattern **at work**: Bitbucket Pipelines + the Yield sandbox
 - [[Local to work]]: how the pattern here translates to the pattern at work
 - [[Mapping]]: work vs mine, component by component, and what's missing
+- [[Branching and releases]]: feature → `dev` → release PR → `main`, versions and tags
 - [[Runners]]: why there are two runner modes, and which one matches work
 
 ## How it runs

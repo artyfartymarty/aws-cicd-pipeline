@@ -3,7 +3,7 @@ tags: [sequence]
 ---
 # Dev deploy sequence
 
-Back to [[00 Home]]. "Deploy to Dev" from any branch, shown in `github-oidc` mode. In `ec2` mode the runner's instance role replaces the OIDC step.
+Back to [[00 Home]]. A PR merged into `dev` runs this automatically (the Dev pipeline); the optional "Deploy to Dev" button runs the same steps for any branch. Shown in `github-oidc` mode. In `ec2` mode the runner's instance role replaces the OIDC step.
 
 ```mermaid
 sequenceDiagram
@@ -17,7 +17,7 @@ sequenceDiagram
   participant S3S as S3 state
   participant AWS as Lambda + DynamoDB (dev)
 
-  Dev->>GH: Run "Deploy to Dev" on branch
+  Dev->>GH: Merge PR into dev (or run "Deploy to Dev")
   GH->>CI: ci.yml: pytest, tofu fmt/validate/test (mocked)
   CI-->>GH: pass
   GH->>STS: _build: OIDC token (repo:owner/repo:ref:...)

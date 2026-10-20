@@ -20,8 +20,8 @@ help: ## Show targets
 ## --- Free, local, no AWS ---------------------------------------------------
 test: test-py test-iac ## Run every local check (same as CI)
 
-test-py: ## Python unit tests
-	python3 -m pytest -q app/tests
+test-py: ## Python unit tests + release script tests
+	python3 -m pytest -q app/tests scripts/ci/tests
 
 test-iac: ## tofu fmt + validate + mocked tests for every stack
 	scripts/ci/test-iac.sh

@@ -1,56 +1,61 @@
-# The manual APPROVE step (stands in for the Jira Ops subtask): promote, or roll
-# back to, a build that is on main. It goes dev -> prod in order, no skipping,
-# and only people in .github/PROD_APPROVERS can get past the prod step.
-# Actions > Release build > Run workflow (branch: main) > paste the build SHA,
-# which is the merge commit SHA shown in the Main pipeline run.
-name: Release build
+# Merge a release PR (dev -> main, merge commit): deploy dev's build to prod,
+# then tag the next semantic version and publish a GitHub release listing every
+# PR in it. Same scripts as bitbucket-pipelines.yml.
+#   release-sha.sh   main's tip must be a merge from dev; prod gets dev's tip,
+#                    the build dev already tested (built by the dev pipeline)
+#   check-prod.sh    in _deploy.yml: the person who merged is in PROD_APPROVERS
+#   next-version.sh  vX.Y.Z from the conventional PR titles since the last tag
+#   release-notes.sh the build SHA and one line per PR
+# The tag goes on only after prod is healthy, so a tag means "was in prod".
+# Merge the release PR after the dev pipeline for dev's tip is green, or the
+# prod job won't find the build.
+name: Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      build_sha:
-        description: Full commit SHA of a build on main
-        required: true
-        type: string
+  push:
+    branches: [main]
 
 permissions:
   contents: read
-  id-token: write # only used in OIDC mode
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     outputs:
-      build_sha: ${{ steps.check.outputs.sha }}
+      build_sha: ${{ steps.sha.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - id: check
-        env:
-          SHA: ${{ inputs.build_sha }}
+      - id: sha
         run: |
-          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
-            echo "::error::Run this workflow from main."; exit 1
-          fi
-          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::build_sha must be a full 40-character SHA."; exit 1
-          fi
-          # First-parent only: the commit must have been main's HEAD at some
-          # point (a merge result), not a feature-branch commit merged into it.
-          if ! git rev-list --first-parent origin/main | grep -qxF "$SHA"; then
-            echo "::error::$SHA was never the tip of main. Only builds of main can go to prod."; exit 1
-          fi
+          SHA="$(scripts/ci/release-sha.sh "$GITHUB_SHA")"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-  dev:
-    needs: verify
-    uses: ./.github/workflows/_deploy.yml
-    with:
-      env: dev
-      build_sha: ${{ needs.verify.outputs.build_sha }}
   prod:
-    needs: [verify, dev]
+    needs: verify
     uses: ./.github/workflows/_deploy.yml
     with:
       env: prod
       build_sha: ${{ needs.verify.outputs.build_sha }}
+  release:
+    needs: prod
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the tag and the release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Tag and publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="$(scripts/ci/next-version.sh "$GITHUB_SHA")"
+          scripts/ci/release-notes.sh "$GITHUB_SHA" >notes.md
+          gh release create "$VERSION" --target "$GITHUB_SHA" --title "$VERSION" --notes-file notes.md
+          { echo "### Released $VERSION"; cat notes.md; } >>"$GITHUB_STEP_SUMMARY"
