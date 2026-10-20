@@ -60,11 +60,11 @@ run "runner_is_locked_down_and_cheap" {
   }
 }
 
-run "dev_and_prod_get_separate_deploy_roles" {
+run "dev_qa_and_prod_get_separate_deploy_roles" {
   command = plan
 
   assert {
-    condition     = toset(keys(aws_iam_role.deploy)) == toset(["dev", "prod"])
+    condition     = toset(keys(aws_iam_role.deploy)) == toset(["dev", "qa", "prod"])
     error_message = "Expected one deploy role per environment."
   }
   assert {
@@ -152,6 +152,10 @@ run "runner_can_never_reach_prod" {
   assert {
     condition     = one(one(data.aws_iam_policy_document.deploy_assume["dev"].statement).principals).identifiers == toset(["arn:aws:iam::111111111111:role/cicd-lab-runner"])
     error_message = "Dev deploy role should trust the runner in ec2 mode."
+  }
+  assert {
+    condition     = one(one(data.aws_iam_policy_document.deploy_assume["qa"].statement).principals).identifiers == toset(["arn:aws:iam::111111111111:role/cicd-lab-runner"])
+    error_message = "QA is non-prod: its deploy role should trust the runner, never the prod role."
   }
   assert {
     condition = alltrue([

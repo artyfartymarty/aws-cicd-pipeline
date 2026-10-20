@@ -1,4 +1,5 @@
-# Merge a release PR (dev -> main, merge commit): deploy dev's build to prod,
+# Merge a release PR (dev -> main, merge commit): deploy dev's build, which the
+# release PR already ran in QA (qa.yml), to prod,
 # then tag the next semantic version and publish a GitHub release listing every
 # PR in it. Same scripts as bitbucket-pipelines.yml.
 #   release-sha.sh   main's tip must be a merge from dev; prod gets dev's tip,

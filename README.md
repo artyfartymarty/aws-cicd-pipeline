@@ -44,10 +44,10 @@ All modes use the same role chain: base role -> `<project>-deploy-dev` /
 | Bitbucket Pipelines, Dynamic Pipelines shared templates | GitHub Actions; `_build.yml` / `_deploy.yml` are reusable templates (`workflow_call`) |
 | Autobahn golden patterns, 3 layers | Layer 1 `infra/modules/`, Layer 2 `.github/workflows/_*.yml`, Layer 3 `infra/app/` |
 | EKS self-hosted runners in the Tools account | One `t4g.micro` Spot EC2 runner in its own VPC (EKS has a ~$73/month control-plane fee) |
-| OIDC base role -> `provisioner-*` role chain | Runner instance role (base) -> `cicd-lab-deploy-dev` / `cicd-lab-deploy-prod` |
+| OIDC base role -> `provisioner-*` role chain | Runner instance role (base) -> `cicd-lab-deploy-dev` / `-qa` / `-prod` |
 | JFrog / ECR artifact | S3 `builds/<git sha>/app.zip`, built once, never overwritten |
 | Config Graph `infraConfig` / Compass per-env settings | SSM Parameter Store `/<project>/env/<env>/config` (outside the repo) |
-| Harness IACM workspaces dev/test/prod | One state file per env: `app/dev.tfstate`, `app/prod.tfstate` |
+| Harness IACM workspaces dev/test/prod | One state file per env: `app/dev.tfstate`, `app/qa.tfstate`, `app/prod.tfstate` |
 | "Deploy to Dev" button, any branch | **Deploy to Dev** workflow, Run workflow on any branch |
 | Jira Ops subtask + Production Authorization | Merging a **release PR** (`dev` into `main`) + `.github/PROD_APPROVERS` allow-list |
 | `python-serverless` template | The sample app: a Python Lambda + DynamoDB table |
@@ -64,8 +64,9 @@ feature branch --push--> CI (GitHub-hosted, free): pytest, tofu fmt/validate/tes
 dev --merge--> Dev pipeline --> CI -> build sha -> plan+apply dev -> smoke test
       |
       release PR dev -> main, merge commit (only dev may go into main)
+      |   opening/updating it --> QA --> same build -> plan+apply qa -> smoke test
       |
-main --merge--> Release --> same build as dev's tip -> authz check -> apply prod -> smoke test
+main --merge--> Release --> same build dev and QA ran -> authz check -> apply prod -> smoke test
                                                     -> tag vX.Y.Z + GitHub release listing every PR
 ```
 
@@ -217,8 +218,8 @@ Nothing hard-codes an account ID. To stand it up in the sandbox:
 - Point the AWS CLI at the sandbox (`export AWS_PROFILE=yield-sandbox`).
 - Pick a prefix and region: `make ... PROJECT=yield AWS_REGION=us-east-1`
   (and `project = "yield"` in `terraform.tfvars`). All names, roles and scopes follow it.
-- Add environments by setting `environments = ["dev", "test", "prod"]` in the
-  platform stack and adding `test` to the `env` validation in `infra/app/variables.tf`.
+- The default environments are `["dev", "qa", "prod"]`. Add one (say `test`) to
+  `environments` in the platform stack and to the `env` validation in `infra/app/variables.tf`.
 - IT applies `infra/platform` once (like the StackSet at work) with
   `sandbox.tfvars.example`, so the team can't edit the pipeline roles. Per-env
   settings land in SSM, which the workflows read.

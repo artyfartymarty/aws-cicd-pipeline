@@ -4,19 +4,21 @@
 #
 #   push to a feature branch   test                            (GitHub: ci.yml)
 #   merge a PR into dev        test -> build -> dev            (pipeline.yml)
-#   merge the release PR       prod (dev's build) -> tag       (release.yml)
+#   open/update the release PR QA (dev's build)                (qa.yml)
 #     (dev -> main)
+#   merge the release PR       prod (same build) -> tag        (release.yml)
 #   custom deploy-to-dev       test -> build -> dev            (deploy-dev.yml)
 #   custom rollback-prod       BUILD_SHA -> dev -> [manual] prod (rollback.yml)
 #
 # Branching (docs/vault/Branching and releases.md): feature branches squash
-# into dev, and a release PR merges dev into main with a merge commit. Prod
-# gets the build dev already ran, and the pipeline pushes a vX.Y.Z tag whose
+# into dev, and a release PR merges dev into main with a merge commit. The
+# release PR deploys QA first; prod gets the build dev and QA already ran, and the pipeline pushes a vX.Y.Z tag whose
 # message lists every PR in the release.
 #
 # One-time setup in Bitbucket (Repository settings):
 #   Pipelines > Settings: enable Pipelines.
-#   Deployments: environments named dev (type Test) and prod (type Production).
+#   Deployments: environments named dev (type Test), qa (type Staging) and prod
+#     (type Production).
 #     prod: allow only the main branch, and only admins (deployment permissions
 #     are a Premium feature; IAM can't check the branch, so this is the gate).
 #   Pipelines > Repository variables: the values `make bb-vars` prints.
@@ -26,7 +28,8 @@
 #   Branches: create dev from main and make dev the Main branch (Repository
 #     details), so new PRs target it. Branch restrictions on dev and main: no
 #     deletes, no direct pushes (merge via PR only). Merge checks on dev and
-#     main: 1 approval, 1 passing build, no changes requested, and (Premium)
+#     main: 1 approval, 1 passing build (on main that is the QA deploy), no
+#     changes requested, and (Premium)
 #     "Prevent a merge with unresolved merge checks". .bitbucket/CODEOWNERS
 #     suggests reviewers. Squash into dev and merge commit into main are by
 #     hand; Bitbucket picks the strategy at merge time.
@@ -78,6 +81,20 @@ definitions:
           - export ENV_NAME=dev BUILD_SHA="${BUILD_SHA:-$BITBUCKET_COMMIT}" APPLY=true
           - scripts/ci/deploy.sh
 
+    # The release PR's QA deploy. In a PR pipeline BITBUCKET_COMMIT should be
+    # the source (dev) commit, which the dev pipeline already built; check the
+    # first run's log shows dev's tip, not a merge result.
+    - step: &deploy-qa
+        name: Deploy QA
+        deployment: qa
+        oidc: true
+        script:
+          - if [ "$BITBUCKET_PR_DESTINATION_BRANCH" != main ]; then echo "QA only runs for release PRs into main."; exit 0; fi
+          - scripts/ci/install-tools.sh
+          - source scripts/ci/bitbucket-aws-login.sh "$AWS_CI_ROLE_ARN"
+          - export ENV_NAME=qa BUILD_SHA="$BITBUCKET_COMMIT" APPLY=true
+          - scripts/ci/deploy.sh
+
     # Signs in with the prod-only role: AWS trusts it only for steps in the prod
     # deployment environment, and Bitbucket lets only main use that environment.
     # On main, the build is dev's tip from the release merge (release-sha.sh
@@ -115,6 +132,11 @@ pipelines:
   # Feature branches (GitHub: ci.yml on push).
   default:
     - step: *test
+
+  # A release PR (from dev) deploys QA (GitHub: qa.yml).
+  pull-requests:
+    dev:
+      - step: *deploy-qa
 
   branches:
     # A PR merged into dev deploys dev, no manual run (GitHub: pipeline.yml).

@@ -9,11 +9,11 @@ variable "region" {
 }
 
 variable "env" {
-  description = "dev or prod. Each env has its own state file (app/<env>.tfstate) and its own resources."
+  description = "dev, qa or prod. Each env has its own state file (app/<env>.tfstate) and its own resources."
   type        = string
   validation {
-    condition     = contains(["dev", "prod"], var.env)
-    error_message = "env must be dev or prod."
+    condition     = contains(["dev", "qa", "prod"], var.env)
+    error_message = "env must be dev, qa or prod."
   }
 }
 

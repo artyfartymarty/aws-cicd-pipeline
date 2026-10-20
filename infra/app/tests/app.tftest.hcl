@@ -57,10 +57,21 @@ run "prod_protects_its_table" {
   }
 }
 
-run "rejects_unknown_env" {
+run "qa_is_disposable_like_dev" {
   command = plan
   variables {
     env = "qa"
+  }
+  assert {
+    condition     = module.app.deletion_protection == false
+    error_message = "QA table should be disposable."
+  }
+}
+
+run "rejects_unknown_env" {
+  command = plan
+  variables {
+    env = "staging"
   }
   expect_failures = [var.env]
 }

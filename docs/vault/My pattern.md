@@ -29,7 +29,7 @@ flowchart TB
       priv[Private subnets<br/>no internet route]
     end
     art[(S3 artifacts<br/>builds/sha/app.zip)]
-    state[(S3 state<br/>app/dev, app/prod)]
+    state[(S3 state<br/>app/dev, app/qa, app/prod)]
     ssm[(SSM Parameter Store<br/>per-env config)]
     base[Base role<br/>runner role or GitHub OIDC role]
     ddev[deploy-dev role]
@@ -61,7 +61,7 @@ See [[Runners]] for the reasoning.
 ## Pipelines
 - CI on every push and PR: pytest, `tofu fmt`, `tofu validate`, `tofu test` with a mocked AWS. Free, no AWS access.
 - Merge a PR into `dev`: build once, deploy dev. **Deploy to Dev** stays as an optional button for any branch. See [[Dev deploy sequence]].
-- Merge the release PR (`dev` into `main`, by someone in `PROD_APPROVERS`): the same build goes to prod, then a `vX.Y.Z` tag and GitHub release. See [[Prod release sequence]] and [[Branching and releases]].
+- Open the release PR (`dev` into `main`): dev's build goes to **QA**. Merge it (by someone in `PROD_APPROVERS`): the same build goes to prod, then a `vX.Y.Z` tag and GitHub release. See [[Prod release sequence]] and [[Branching and releases]].
 - **Roll back prod** (from `main`): an older released build, dev then prod.
 
 Related: [[IAM role chain]], [[Network]], [[Config outside the repo]], [[Cost]].

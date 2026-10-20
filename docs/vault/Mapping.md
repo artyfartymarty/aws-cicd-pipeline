@@ -17,10 +17,10 @@ Back to [[00 Home]]. Sources: [[Work pattern]] and [[My pattern]]. This compares
 | Runners in a separate Tools account, TGW + Palo Alto egress | Runner in the same account, internet gateway, no inbound | ❌ different on purpose (cost); see [[Runners]] |
 | Harness OIDC connector → base role → `provisioner-*` role | GitHub OIDC (or runner role) → base role → `deploy-<env>` role | ✅ same chain; see [[IAM role chain]] |
 | Provisioner roles pre-created by StackSet | Created by `infra/platform` (you or IT apply it once) | ✅ equivalent |
-| IACM workspaces dev/test/prod | State files `app/dev.tfstate`, `app/prod.tfstate` | ✅ equivalent; add `test` with one variable |
-| Envs DEV → TEST → QA → PSUP → PROD | dev → prod | 🟡 fewer envs (cost); list is a variable |
+| IACM workspaces dev/test/prod | State files `app/dev.tfstate`, `app/qa.tfstate`, `app/prod.tfstate` | ✅ equivalent; more envs are one variable |
+| Envs DEV → TEST → QA → PSUP → PROD | dev → qa → prod | 🟡 fewer envs (cost); list is a variable |
 | Branches → dev/test only, `main` → higher envs | `dev` → dev; only builds a release PR brought into `main` → prod ([[Branching and releases]]) | ✅ |
-| Same build number promoted in order, no skipping | Same S3 object (`builds/<sha>`) promoted dev → prod, prod needs dev first | ✅ |
+| Same build number promoted in order, no skipping | Same S3 object (`builds/<sha>`) promoted dev → qa → prod | ✅ |
 | Jira Ops subtask (`repoSlug`, `branch`, `build`) | Release PR `dev` → `main`; Roll back prod input `build_sha` | 🟡 no ticket system |
 | `svc-autobahn` service account + Production Authorization | `PROD_APPROVERS` allow-list check | 🟡 workflow-level check; see [[Review findings]] |
 | JFrog Artifactory + proxy, ECR | S3 artifact bucket | 🟡 no package proxy; no container images |

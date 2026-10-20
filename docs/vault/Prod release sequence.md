@@ -3,7 +3,7 @@ tags: [sequence]
 ---
 # Prod release sequence
 
-Back to [[00 Home]]. Merging the **release PR** (`dev` into `main`) deploys prod with the build `dev` already ran, then tags the release. This stands in for the Jira Ops subtask + Production Authorization. The branching rules are in [[Branching and releases]].
+Back to [[00 Home]]. Merging the **release PR** (`dev` into `main`) deploys prod with the build `dev` and QA already ran, then tags the release. This stands in for the Jira Ops subtask + Production Authorization. The branching rules are in [[Branching and releases]].
 
 ```mermaid
 sequenceDiagram
@@ -14,7 +14,7 @@ sequenceDiagram
   participant STS as AWS STS
   participant PROD as prod env
 
-  Note over GH: Earlier: PRs squash into dev → build dev-tip sha, apply dev
+  Note over GH: Earlier: PRs squash into dev → build dev-tip sha, apply dev.<br/>Opening the release PR applied the same sha to QA.
   A->>GH: Merge release PR dev → main (merge commit)
   GH->>V: release-sha.sh: main's tip is a merge from dev?
   V-->>GH: build = dev's tip (second parent)

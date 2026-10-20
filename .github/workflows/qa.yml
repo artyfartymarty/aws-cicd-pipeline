@@ -1,0 +1,25 @@
+# Open or update a release PR (dev -> main): deploy dev's tip to QA. Test there,
+# then merge the PR to send the same build to prod (release.yml). New merges
+# into dev while the PR is open redeploy QA, so QA always runs what the merge
+# would ship. The build comes from the Dev pipeline, so wait for it to finish
+# first; if it hasn't, re-run this job.
+# On GitHub Free nothing stops a merge before QA is green (that needs a
+# required status check, a Pro feature for private repos), so check it by hand.
+name: QA
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write # only used in OIDC mode
+
+jobs:
+  qa:
+    # Same rule as pr-rules.yml: only dev's release PRs, never forks.
+    if: github.head_ref == 'dev' && github.event.pull_request.head.repo.full_name == github.repository
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      env: qa
+      build_sha: ${{ github.event.pull_request.head.sha }}

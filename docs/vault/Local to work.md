@@ -42,6 +42,7 @@ flowchart TB
 | `pipeline.yml` (push to `dev`) | `branches: dev` |
 | `release.yml` (push to `main`: prod, then tag) | `branches: main` (prod step `trigger: automatic`, then `tag-release`) |
 | `rollback.yml` with input `build_sha` | `custom: rollback-prod` with variable `BUILD_SHA` |
+| `qa.yml` (release PR → QA) | `pull-requests: dev` → `deploy-qa` step |
 | `pr-rules.yml` (only `dev` into `main`, PR title) | merge checks + branch restrictions; prod refuses non-`dev` merges |
 | GitHub release (notes = PR list) | annotated tag, message = PR list |
 | `.github/CODEOWNERS` | `.bitbucket/CODEOWNERS` |

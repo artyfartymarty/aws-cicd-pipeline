@@ -11,7 +11,8 @@ The pattern to use **at work**, in the Yield sandbox account: Bitbucket Pipeline
 |---|---|---|
 | Push to a feature branch | test | `bitbucket-pipelines.yml` → `default` |
 | Merge a PR into `dev` (squash) | test → build → dev | `branches: dev` |
-| Merge the release PR `dev` → `main` (merge commit) | prod (dev's build) → tag `vX.Y.Z` | `branches: main` (stands in for the Jira Ops subtask) |
+| Open or update the release PR `dev` → `main` | QA (dev's build) | `pull-requests: dev` |
+| Merge the release PR (merge commit) | prod (same build) → tag `vX.Y.Z` | `branches: main` (stands in for the Jira Ops subtask) |
 | **Run pipeline → deploy-to-dev** (any branch, optional) | test → build → dev | `custom: deploy-to-dev` |
 | **Run pipeline → rollback-prod** on `main`, with `BUILD_SHA` | dev → **manual** prod | `custom: rollback-prod` |
 
@@ -24,7 +25,8 @@ flowchart LR
   dev[Developer] -->|push branch| t[test]
   dev -->|Run pipeline: deploy-to-dev| t2[test] --> b[build<br/>builds/sha/app.zip] --> d[Deploy dev<br/>deployment: dev]
   dev -->|squash PR| dp[dev pipeline] --> t3[test] --> b2[build] --> d2[Deploy dev]
-  dp -->|release PR, merge commit| m[main pipeline] --> p{{Deploy prod<br/>deployment: prod<br/>dev's build}} --> tg[Tag vX.Y.Z]
+  dp -->|open release PR| q[PR pipeline] --> dq[Deploy QA<br/>deployment: qa]
+  dq -->|merge, merge commit| m[main pipeline] --> p{{Deploy prod<br/>deployment: prod<br/>same build}} --> tg[Tag vX.Y.Z]
   rel[Run pipeline: rollback-prod<br/>BUILD_SHA] --> d3[Deploy dev] --> p2{{Deploy prod<br/>manual}}
   p --> chk[check-prod.sh<br/>main, first-parent, approver UUID]
   p2 --> chk
@@ -57,11 +59,11 @@ sequenceDiagram
 
 ## Setting it up in the sandbox
 
-1. **IT (or you, if allowed) applies `infra/platform`** with `work.tfvars.example` copied to `terraform.tfvars`. The values come from Bitbucket → Repository settings → Pipelines → **OpenID Connect**: identity provider URL, audience, repository UUID, and the dev / prod deployment environment UUIDs.
-2. **Bitbucket → Deployments:** environments `dev` (Test) and `prod` (Production). On `prod`, restrict to `main` and admins.
+1. **IT (or you, if allowed) applies `infra/platform`** with `work.tfvars.example` copied to `terraform.tfvars`. The values come from Bitbucket → Repository settings → Pipelines → **OpenID Connect**: identity provider URL, audience, repository UUID, and the dev / qa / prod deployment environment UUIDs.
+2. **Bitbucket → Deployments:** environments `dev` (Test), `qa` (Staging) and `prod` (Production). On `prod`, restrict to `main` and admins.
 3. **Bitbucket → Repository variables:** paste what `make bb-vars` prints (`AWS_REGION`, `PROJECT`, `TF_STATE_BUCKET`, `ARTIFACT_BUCKET`, `AWS_CI_ROLE_ARN`, `AWS_CI_PROD_ROLE_ARN`). None are secrets.
 4. **`.bitbucket/PROD_APPROVERS`:** the Bitbucket user UUIDs allowed to release.
-5. Create `dev`, make it the Main branch, and set the branch restrictions and merge checks listed in `bitbucket-pipelines.yml`. Merge a PR into `dev` (deploys dev), then merge a release PR into `main` (deploys prod and tags `v0.1.0`).
+5. Create `dev`, make it the Main branch, and set the branch restrictions and merge checks listed in `bitbucket-pipelines.yml`. Merge a PR into `dev` (deploys dev), then open a release PR into `main` (deploys QA), test, and merge it (deploys prod and tags `v0.1.0`). The "passing builds" merge check on `main` makes QA's green build required.
 
 The sandbox [[Sandbox guardrails]] already allow the Bitbucket OIDC issuer (`api.bitbucket.org/*`) and block internet gateways, so this mode creates none. Bitbucket's own runners are outside the account and reach AWS APIs over the internet, like GitHub's do in [[Runners|GitHub OIDC mode]].
 
