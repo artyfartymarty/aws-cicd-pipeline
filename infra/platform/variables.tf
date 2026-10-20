@@ -41,7 +41,7 @@ variable "vpc_cidr" {
 variable "environments" {
   description = "Environments that share this account. Each gets its own deploy role, boundary and state file."
   type        = list(string)
-  default     = ["dev", "prod"]
+  default     = ["dev", "qa", "prod"]
 }
 
 variable "runner_mode" {

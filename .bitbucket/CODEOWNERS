@@ -1,0 +1,4 @@
+# Who reviews what (Bitbucket). Bitbucket adds these owners as suggested
+# reviewers on new PRs; it does not block a merge on its own. Use the merge
+# check "minimum approvals" for that. Replace the example with your team.
+# * @your-workspace/your-team

@@ -4,8 +4,8 @@
 #   uses: <you>/pipeline-templates/.github/workflows/_deploy.yml@v1
 #
 # Credentials:
-#   dev  - the self-hosted runner's instance role (ec2 mode) or <project>-ci via
-#          OIDC (github-oidc mode), then <project>-deploy-dev.
+#   dev, qa - the self-hosted runner's instance role (ec2 mode) or <project>-ci
+#          via OIDC (github-oidc mode), then <project>-deploy-<env>.
 #   prod - always a GitHub-hosted runner with <project>-ci-prod via OIDC. AWS only
 #          trusts that role for jobs on refs/heads/main, so a workflow edited on
 #          another branch cannot get prod credentials, whatever its YAML says.

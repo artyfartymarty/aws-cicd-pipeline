@@ -1,0 +1,44 @@
+# Branching rules a private repo on GitHub Free can't enforce in settings.
+# These checks go red when a rule is broken, but on Free they can't block the
+# merge button (that needs branch protection, a GitHub Pro feature for private
+# repos). release-sha.sh in release.yml is the backstop: prod refuses anything
+# on main that isn't a merge from dev.
+name: PR rules
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions: {}
+
+jobs:
+  release-pr:
+    name: Only dev into main
+    if: github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          if [ "$HEAD_REF" != dev ] || [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
+            echo "::error::Only dev may be merged into main (this PR is from $HEAD_REPO:$HEAD_REF). Open it against dev."
+            exit 1
+          fi
+          echo "Release PR from dev. Merge it with 'Create a merge commit', not squash."
+
+  title:
+    name: Conventional PR title
+    if: github.base_ref != 'main'
+    runs-on: ubuntu-latest
+    steps:
+      # The squash commit on dev takes the PR title, and next-version.sh reads
+      # it: feat -> minor, type! -> major, anything else -> patch.
+      - env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          types='feat|fix|docs|refactor|perf|test|build|ci|chore|revert|style'
+          if ! [[ "$TITLE" =~ ^($types)(\([a-z0-9-]+\))?!?:\ .+ ]]; then
+            echo "::error::PR title must look like 'feat: add search' or 'fix(api)!: drop v1' (types: ${types//|/, })."
+            exit 1
+          fi

@@ -13,6 +13,7 @@ bitbucket_oidc_audience = "ari:cloud:bitbucket::workspace/<workspace-uuid>"
 bitbucket_repo_uuid     = "{<repository-uuid>}"
 bitbucket_deployment_uuids = {
   dev  = "{<dev-environment-uuid>}"
+  qa   = "{<qa-environment-uuid>}"
   prod = "{<prod-environment-uuid>}"
 }
 # create_oidc_provider = false   # if IT already created this workspace's Bitbucket OIDC provider

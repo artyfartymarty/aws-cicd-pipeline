@@ -27,7 +27,7 @@ Back to [[00 Home]]. An adversarial review of the code and policies, and what ch
 | 18 | Low | `lambda:VpcIds` on updates is unverified | **Known.** On the IT checklist |
 
 ## Still open, and why
-- **On GitHub Free, anyone with write access can push to `main`, so they can reach prod.** Alone in the repo, that's only you. For a team, GitHub Pro/Team (branch protection, CODEOWNERS on `.github/`, required reviewers) closes it.
+- **On GitHub Free, anyone with write access can push to `main`.** Since the branching change, prod refuses anything on `main` that isn't a merge from `dev` (`release-sha.sh`), but anyone with write access can still merge into `dev` and open the release PR. Alone in the repo, that's only you. For a team, GitHub Pro/Team (branch protection, CODEOWNERS on `.github/`, required reviewers) closes it.
 - **People with team access can still change prod by hand** in the shared sandbox account. The separation stops pipelines, not people. A separate prod account is the real fix.
 
 Related: [[IAM role chain]], [[Prod release sequence]], [[Sandbox guardrails]].

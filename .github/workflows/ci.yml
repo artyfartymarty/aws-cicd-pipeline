@@ -1,12 +1,12 @@
 # Cheap checks on GitHub-hosted runners (free minutes, no AWS access, no AWS cost).
-# Runs on every PR and every push to a non-main branch; the main pipeline and
+# Runs on every PR and every push to a feature branch; the dev pipeline and
 # Deploy to Dev call it first too.
 name: CI
 
 on:
   pull_request:
   push:
-    branches-ignore: [main]
+    branches-ignore: [main, dev]
   workflow_call:
 
 permissions:
@@ -28,7 +28,7 @@ jobs:
       - name: Python unit tests
         run: |
           pip install -r app/requirements-dev.txt
-          pytest -q app/tests
+          pytest -q app/tests scripts/ci/tests
 
       - uses: opentofu/setup-opentofu@v1
         with:

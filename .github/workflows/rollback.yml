@@ -1,0 +1,50 @@
+# Roll prod back (or forward again) to a build that was released before.
+# Normal releases need no button: merging a release PR deploys prod
+# (release.yml). It goes dev -> prod in order, no skipping, and only people in
+# .github/PROD_APPROVERS can run it.
+# Actions > Roll back prod > Run workflow (branch: main) > paste the build SHA,
+# which is the "Build:" line in that version's GitHub release.
+
+name: Roll back prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_sha:
+        description: Full commit SHA of a released build (the "Build:" line of a release)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write # only used in OIDC mode
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      build_sha: ${{ steps.check.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Same check as the prod step, run first so a bad SHA never reaches dev.
+      - id: check
+        env:
+          SHA: ${{ inputs.build_sha }}
+          WHO: ${{ github.triggering_actor }}
+        run: |
+          scripts/ci/check-prod.sh "$GITHUB_REF_NAME" "$SHA" "$WHO" .github/PROD_APPROVERS
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+  dev:
+    needs: verify
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      env: dev
+      build_sha: ${{ needs.verify.outputs.build_sha }}
+  prod:
+    needs: [verify, dev]
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      env: prod
+      build_sha: ${{ needs.verify.outputs.build_sha }}

@@ -2,20 +2,37 @@
 # Same stages, same IAM role chain, same scripts (scripts/ci/). Only sign-in and
 # who-may-run-prod differ. The translation guide is docs/vault/Local to work.md.
 #
-#   push to a branch   test                                   (GitHub: ci.yml)
-#   custom deploy-to-dev   test -> build -> dev               (deploy-dev.yml)
-#   push to main       test -> build -> dev -> [manual] prod  (pipeline.yml)
-#   custom release-build   BUILD_SHA -> dev -> [manual] prod  (release.yml)
+#   push to a feature branch   test                            (GitHub: ci.yml)
+#   merge a PR into dev        test -> build -> dev            (pipeline.yml)
+#   open/update the release PR QA (dev's build)                (qa.yml)
+#     (dev -> main)
+#   merge the release PR       prod (same build) -> tag        (release.yml)
+#   custom deploy-to-dev       test -> build -> dev            (deploy-dev.yml)
+#   custom rollback-prod       BUILD_SHA -> dev -> [manual] prod (rollback.yml)
+#
+# Branching (docs/vault/Branching and releases.md): feature branches squash
+# into dev, and a release PR merges dev into main with a merge commit. The
+# release PR deploys QA first; prod gets the build dev and QA already ran, and the pipeline pushes a vX.Y.Z tag whose
+# message lists every PR in the release.
 #
 # One-time setup in Bitbucket (Repository settings):
 #   Pipelines > Settings: enable Pipelines.
-#   Deployments: environments named dev (type Test) and prod (type Production).
+#   Deployments: environments named dev (type Test), qa (type Staging) and prod
+#     (type Production).
 #     prod: allow only the main branch, and only admins (deployment permissions
 #     are a Premium feature; IAM can't check the branch, so this is the gate).
 #   Pipelines > Repository variables: the values `make bb-vars` prints.
 #   Pipelines > OpenID Connect: copy the URL, audience and UUIDs into
 #     infra/platform/terraform.tfvars (see work.tfvars.example).
 #   .bitbucket/PROD_APPROVERS: Bitbucket user UUIDs allowed to deploy to prod.
+#   Branches: create dev from main and make dev the Main branch (Repository
+#     details), so new PRs target it. Branch restrictions on dev and main: no
+#     deletes, no direct pushes (merge via PR only). Merge checks on dev and
+#     main: 1 approval, 1 passing build (on main that is the QA deploy), no
+#     changes requested, and (Premium)
+#     "Prevent a merge with unresolved merge checks". .bitbucket/CODEOWNERS
+#     suggests reviewers. Squash into dev and merge commit into main are by
+#     hand; Bitbucket picks the strategy at merge time.
 #
 # At work: steps would add `runs-on: [self.hosted, linux, ...]` to use the EKS
 # runners, and images would come through the JFrog proxy.
@@ -42,7 +59,7 @@ definitions:
           - scripts/ci/install-tools.sh
           - export TF_PLUGIN_CACHE_DIR=~/.terraform.d/plugin-cache && mkdir -p "$TF_PLUGIN_CACHE_DIR"
           - pip install -q -r app/requirements-dev.txt
-          - python -m pytest -q app/tests
+          - python -m pytest -q app/tests scripts/ci/tests
           - scripts/ci/test-iac.sh
 
     - step: &build
@@ -64,8 +81,24 @@ definitions:
           - export ENV_NAME=dev BUILD_SHA="${BUILD_SHA:-$BITBUCKET_COMMIT}" APPLY=true
           - scripts/ci/deploy.sh
 
+    # The release PR's QA deploy. In a PR pipeline BITBUCKET_COMMIT should be
+    # the source (dev) commit, which the dev pipeline already built; check the
+    # first run's log shows dev's tip, not a merge result.
+    - step: &deploy-qa
+        name: Deploy QA
+        deployment: qa
+        oidc: true
+        script:
+          - if [ "$BITBUCKET_PR_DESTINATION_BRANCH" != main ]; then echo "QA only runs for release PRs into main."; exit 0; fi
+          - scripts/ci/install-tools.sh
+          - source scripts/ci/bitbucket-aws-login.sh "$AWS_CI_ROLE_ARN"
+          - export ENV_NAME=qa BUILD_SHA="$BITBUCKET_COMMIT" APPLY=true
+          - scripts/ci/deploy.sh
+
     # Signs in with the prod-only role: AWS trusts it only for steps in the prod
     # deployment environment, and Bitbucket lets only main use that environment.
+    # On main, the build is dev's tip from the release merge (release-sha.sh
+    # refuses anything that isn't a merge from dev); rollback-prod passes one.
     - step: &deploy-prod
         name: Deploy prod
         deployment: prod
@@ -73,22 +106,53 @@ definitions:
         oidc: true
         script:
           - scripts/ci/install-tools.sh
-          - export ENV_NAME=prod BUILD_SHA="${BUILD_SHA:-$BITBUCKET_COMMIT}" APPLY=true
+          - if [ -z "${BUILD_SHA:-}" ]; then BUILD_SHA="$(scripts/ci/release-sha.sh HEAD)"; fi
+          - export ENV_NAME=prod BUILD_SHA APPLY=true
           - scripts/ci/check-prod.sh "$BITBUCKET_BRANCH" "$BUILD_SHA" "$BITBUCKET_STEP_TRIGGERER_UUID" .bitbucket/PROD_APPROVERS
           - source scripts/ci/bitbucket-aws-login.sh "$AWS_CI_PROD_ROLE_ARN"
           - scripts/ci/deploy.sh
 
+    # After prod is healthy: tag the release merge with the next version. The
+    # tag message is the release notes (Bitbucket has no Releases page).
+    # Pipelines can push back to their own repo with the default credentials.
+    - step: &tag-release
+        name: Tag the release
+        script:
+          - scripts/ci/install-tools.sh
+          - git fetch --quiet --tags origin
+          - git config user.name "Bitbucket Pipelines"
+          - git config user.email "commits-noreply@bitbucket.org"
+          - VERSION="$(scripts/ci/next-version.sh HEAD)"
+          - scripts/ci/release-notes.sh HEAD >notes.md
+          - git tag -a "$VERSION" -F notes.md HEAD
+          - git push origin "$VERSION"
+          - echo "Released $VERSION" && cat notes.md
+
 pipelines:
-  # Every branch except main (GitHub: ci.yml on push).
+  # Feature branches (GitHub: ci.yml on push).
   default:
     - step: *test
 
+  # A release PR (from dev) deploys QA (GitHub: qa.yml).
+  pull-requests:
+    dev:
+      - step: *deploy-qa
+
   branches:
-    main:
+    # A PR merged into dev deploys dev, no manual run (GitHub: pipeline.yml).
+    dev:
       - step: *test
       - step: *build
       - step: *deploy-dev
-      - step: *deploy-prod
+
+    # A release PR merged into main deploys prod, then tags (release.yml).
+    # Prod runs straight away: the gates are who may merge into main, the prod
+    # deployment environment (main only, admins only) and PROD_APPROVERS.
+    main:
+      - step:
+          <<: *deploy-prod
+          trigger: automatic
+      - step: *tag-release
 
   custom:
     # The "Deploy to Dev" button: Pipelines > Run pipeline > pick any branch.
@@ -97,11 +161,11 @@ pipelines:
       - step: *build
       - step: *deploy-dev
 
-    # Stands in for the Jira Ops subtask: promote, or roll back to, a build of
-    # main. Run it on main with the merge commit SHA of that build.
-    release-build:
+    # Roll prod back (or forward again) to an earlier release. Run it on main
+    # with the "Build:" SHA from that version's tag message.
+    rollback-prod:
       - variables:
           - name: BUILD_SHA
-            description: Full commit SHA of a build on main
+            description: Full commit SHA of a released build (the "Build:" line of a tag)
       - step: *deploy-dev
       - step: *deploy-prod
