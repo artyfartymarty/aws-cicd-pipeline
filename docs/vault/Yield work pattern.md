@@ -59,7 +59,7 @@ sequenceDiagram
 
 ## Setting it up in the sandbox
 
-1. **IT (or you, if allowed) applies `infra/platform`** with `work.tfvars.example` copied to `terraform.tfvars`. The values come from Bitbucket → Repository settings → Pipelines → **OpenID Connect**: identity provider URL, audience, repository UUID, and the dev / qa / prod deployment environment UUIDs.
+1. **IT applies `infra/platform`** (decided 2026-10-17; the team never applies it) with `work.tfvars.example` copied to `terraform.tfvars`. The values come from Bitbucket → Repository settings → Pipelines → **OpenID Connect**: identity provider URL, audience, repository UUID, and the dev / qa / prod deployment environment UUIDs.
 2. **Bitbucket → Deployments:** environments `dev` (Test), `qa` (Staging) and `prod` (Production). On `prod`, restrict to `main` and admins.
 3. **Bitbucket → Repository variables:** paste what `make bb-vars` prints (`AWS_REGION`, `PROJECT`, `TF_STATE_BUCKET`, `ARTIFACT_BUCKET`, `AWS_CI_ROLE_ARN`, `AWS_CI_PROD_ROLE_ARN`). None are secrets.
 4. **`.bitbucket/PROD_APPROVERS`:** the Bitbucket user UUIDs allowed to release.

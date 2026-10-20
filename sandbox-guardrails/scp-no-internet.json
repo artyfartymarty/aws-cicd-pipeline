@@ -22,12 +22,26 @@
         "ec2:CreateVpcPeeringConnection",
         "ec2:AcceptVpcPeeringConnection",
         "ec2:CreateTransitGateway",
-        "ec2:CreateTransitGatewayVpcAttachment",
-        "ec2:AcceptTransitGatewayVpcAttachment",
         "globalaccelerator:*",
         "lightsail:*"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "OnlyItConnectsToWorkNetwork",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:CreateTransitGatewayVpcAttachment",
+        "ec2:AcceptTransitGatewayVpcAttachment",
+        "networkmanager:*",
+        "ram:AcceptResourceShareInvitation"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalArn": "arn:aws:iam::*:role/<it-network-role>"
+        }
+      }
     },
     {
       "Sid": "NoPublicIpOnLaunch",
@@ -114,9 +128,7 @@
       "Effect": "Deny",
       "Action": [
         "ec2:CreateVpcEndpointServiceConfiguration",
-        "ram:AcceptResourceShareInvitation",
         "vpc-lattice:*",
-        "networkmanager:*",
         "directconnect:*",
         "events:CreateApiDestination",
         "events:CreateConnection",

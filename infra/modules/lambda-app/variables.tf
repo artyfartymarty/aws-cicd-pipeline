@@ -28,6 +28,12 @@ variable "deletion_protection" {
   default = false
 }
 
+variable "point_in_time_recovery" {
+  description = "Continuous backups, so bad writes can be undone by restoring to a point in time. Billed per GB of table size."
+  type        = bool
+  default     = false
+}
+
 variable "memory_mb" {
   type    = number
   default = 128

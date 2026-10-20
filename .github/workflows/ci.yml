@@ -28,7 +28,7 @@ jobs:
       - name: Python unit tests
         run: |
           pip install -r app/requirements-dev.txt
-          pytest -q app/tests scripts/ci/tests
+          pytest -q app/tests scripts/ci/tests sandbox-guardrails/tests
 
       - uses: opentofu/setup-opentofu@v1
         with:

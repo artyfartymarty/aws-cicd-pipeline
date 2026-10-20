@@ -27,7 +27,8 @@ Diagrams are in `docs/vault/Sandbox guardrails.md`.
 - Internet gateways, egress-only gateways, NAT, carrier gateways, the default VPC.
 - Elastic IPs or instances launched with a public IP.
 - VPN, Direct Connect, peering, Transit Gateway, Cloud WAN, VPC Lattice, accepting RAM
-  shares (a shared subnet from another account could have internet).
+  shares (a shared subnet from another account could have internet). One exception: IT's
+  network role may attach the VPC to work's Transit Gateway or Cloud WAN (step 6 below).
 - VPC endpoints to non-AWS PrivateLink services, or offering endpoint services.
 - Lambdas outside a VPC, and public Lambda URLs.
 - Managed services that call out to the internet: EventBridge API destinations,
@@ -50,7 +51,11 @@ Diagrams are in `docs/vault/Sandbox guardrails.md`.
 4. Apply `infra/platform` with `infra/platform/sandbox.tfvars.example`.
 5. If IT's own admin role must be exempt from the SCP, add
    `"ArnNotLike": {"aws:PrincipalArn": "arn:aws:iam::*:role/<it-admin-role>"}` to each Deny's condition.
-6. Test one Lambda env-var update after applying: the `lambda:VpcIds` condition on
+6. **Only if the sandbox joins work's network:** replace `<it-network-role>` in the SCP's
+   `OnlyItConnectsToWorkNetwork` statement with the role IT applies `infra/platform` with.
+   That role alone may accept the Transit Gateway or Cloud WAN resource share and create
+   the attachment. Then set `private_network` in `terraform.tfvars`.
+7. Test one Lambda env-var update after applying: the `lambda:VpcIds` condition on
    `UpdateFunctionConfiguration` is AWS's documented pattern, but confirm it.
 
 ## Honest limits
@@ -64,6 +69,10 @@ Diagrams are in `docs/vault/Sandbox guardrails.md`.
   uses one, add a deny or a VPC condition for it.
 - S3 and DynamoDB gateway endpoints without an endpoint policy can reach any account's
   buckets in the region. Add endpoint policies with `aws:ResourceAccount` if exfiltration matters.
+- **If the sandbox joins work's network**, the team can still edit its own route tables and
+  could point `0.0.0.0/0` at the attachment. The SCP has no condition key for a route's
+  destination, so the real guard is the network side: the sandbox's route domain (Cloud WAN
+  segment) must have no path to internet egress. Confirm that with Enterprise Networks.
 - DNS queries still leave through the VPC resolver. Route 53 Resolver DNS Firewall closes that.
 - `ec2:VpceServiceOwner` and `sns:Protocol` are the condition keys I expect to work. Run
   them through IAM Access Analyzer's policy validation before applying.

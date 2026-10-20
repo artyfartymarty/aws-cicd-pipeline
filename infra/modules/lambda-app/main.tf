@@ -18,6 +18,10 @@ resource "aws_dynamodb_table" "items" {
   }
 
   deletion_protection_enabled = var.deletion_protection
+
+  point_in_time_recovery {
+    enabled = var.point_in_time_recovery
+  }
 }
 
 data "aws_iam_policy_document" "lambda_assume" {

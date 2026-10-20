@@ -34,8 +34,58 @@ variable "tofu_version" {
 }
 
 variable "vpc_cidr" {
-  type    = string
-  default = "10.20.0.0/16"
+  description = "VPC range. At work, use the range Enterprise Networks allocates so it doesn't overlap the internal network."
+  type        = string
+  default     = "10.20.0.0/16"
+  validation {
+    condition     = can(cidrhost(var.vpc_cidr, 0))
+    error_message = "vpc_cidr must be a CIDR block such as 10.20.0.0/16."
+  }
+}
+
+variable "private_subnet_cidrs" {
+  description = "Two private subnet ranges inside vpc_cidr, one per AZ. Leave null to carve /24s out of a /16 automatically; set them when IT hands out a smaller range."
+  type        = list(string)
+  default     = null
+  validation {
+    condition     = var.private_subnet_cidrs == null ? true : length(var.private_subnet_cidrs) == 2
+    error_message = "Give exactly two private subnet CIDRs, one per AZ."
+  }
+}
+
+variable "private_network" {
+  description = <<-EOT
+    Optional route from work's internal network (on-prem and the Tools account runners)
+    into the private subnets. Off (null) by default. IT applies it, because the attachment
+    needs a resource share from Enterprise Networks and the SCP only lets IT's role make one.
+      transit_gateway_id - today's Transit Gateway, or
+      core_network_arn   - the AWS Cloud WAN core network work is migrating to (set one, not both)
+      internal_cidrs     - private ranges to send there. Never a default route: the sandbox
+                           must have no path to the internet.
+  EOT
+  type = object({
+    transit_gateway_id = optional(string)
+    core_network_arn   = optional(string)
+    internal_cidrs     = list(string)
+  })
+  default = null
+  validation {
+    condition = var.private_network == null ? true : (
+      (var.private_network.transit_gateway_id == null) != (var.private_network.core_network_arn == null)
+    )
+    error_message = "Set exactly one of transit_gateway_id or core_network_arn."
+  }
+  validation {
+    condition = var.private_network == null ? true : length(var.private_network.internal_cidrs) > 0 && alltrue([
+      for c in var.private_network.internal_cidrs : can(cidrhost(c, 0)) && anytrue([
+        # c is inside p when it is no wider and masking c to p's length gives p
+        for p in ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"] :
+        tonumber(split("/", c)[1]) >= tonumber(split("/", p)[1]) &&
+        cidrhost("${cidrhost(c, 0)}/${split("/", p)[1]}", 0) == cidrhost(p, 0)
+      ])
+    ])
+    error_message = "internal_cidrs must be private ranges inside 10.0.0.0/8, 172.16.0.0/12 or 192.168.0.0/16. A default route (0.0.0.0/0) would give the sandbox internet through work's egress."
+  }
 }
 
 variable "environments" {

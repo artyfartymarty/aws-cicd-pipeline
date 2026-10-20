@@ -59,7 +59,7 @@ definitions:
           - scripts/ci/install-tools.sh
           - export TF_PLUGIN_CACHE_DIR=~/.terraform.d/plugin-cache && mkdir -p "$TF_PLUGIN_CACHE_DIR"
           - pip install -q -r app/requirements-dev.txt
-          - python -m pytest -q app/tests scripts/ci/tests
+          - python -m pytest -q app/tests scripts/ci/tests sandbox-guardrails/tests
           - scripts/ci/test-iac.sh
 
     - step: &build
