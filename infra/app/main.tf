@@ -17,6 +17,7 @@ module "app" {
   artifact_version         = var.artifact_version
   permissions_boundary_arn = var.app_boundary_arn
   deletion_protection      = var.env == "prod"
+  point_in_time_recovery   = var.env == "prod"
   memory_mb                = var.memory_mb
   subnet_ids               = var.lambda_subnet_ids
   security_group_ids       = var.lambda_security_group_ids

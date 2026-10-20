@@ -44,6 +44,10 @@ run "dev_plan_uses_the_build_artifact" {
     condition     = module.app.deletion_protection == false
     error_message = "Dev table should be disposable."
   }
+  assert {
+    condition     = module.app.point_in_time_recovery == false
+    error_message = "Dev table doesn't need point-in-time recovery."
+  }
 }
 
 run "prod_protects_its_table" {
@@ -55,6 +59,10 @@ run "prod_protects_its_table" {
     condition     = module.app.deletion_protection
     error_message = "Prod table must have deletion protection."
   }
+  assert {
+    condition     = module.app.point_in_time_recovery
+    error_message = "Prod table must have point-in-time recovery, so bad writes can be undone."
+  }
 }
 
 run "qa_is_disposable_like_dev" {
@@ -65,6 +73,10 @@ run "qa_is_disposable_like_dev" {
   assert {
     condition     = module.app.deletion_protection == false
     error_message = "QA table should be disposable."
+  }
+  assert {
+    condition     = module.app.point_in_time_recovery == false
+    error_message = "QA table doesn't need point-in-time recovery."
   }
 }
 

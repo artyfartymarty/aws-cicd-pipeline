@@ -22,6 +22,12 @@ mock_provider "aws" {
   mock_resource "aws_iam_openid_connect_provider" {
     defaults = { arn = "arn:aws:iam::111111111111:oidc-provider/token.actions.githubusercontent.com" }
   }
+  mock_resource "aws_vpc" {
+    defaults = { arn = "arn:aws:ec2:us-east-1:111111111111:vpc/vpc-0123456789abcdef0" }
+  }
+  mock_resource "aws_subnet" {
+    defaults = { arn = "arn:aws:ec2:us-east-1:111111111111:subnet/subnet-0123456789abcdef0" }
+  }
   mock_data "aws_ssm_parameter" {
     defaults = { value = "ami-0123456789abcdef0" }
   }
@@ -230,4 +236,111 @@ run "bitbucket_mode_refuses_missing_prod_environment" {
     bitbucket_repo_uuid     = "{aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee}"
   }
   expect_failures = [aws_iam_role.ci_prod]
+}
+
+# --- Optional private route from work's network (off by default) -------------
+
+run "private_route_is_off_by_default" {
+  command = plan
+  variables {
+    runner_mode = "github-oidc"
+  }
+  assert {
+    condition = (
+      length(aws_ec2_transit_gateway_vpc_attachment.work) == 0 &&
+      length(aws_networkmanager_vpc_attachment.work) == 0 &&
+      length(aws_route.work) == 0
+    )
+    error_message = "No attachment or route to work's network unless private_network is set."
+  }
+}
+
+run "transit_gateway_route_carries_only_internal_ranges" {
+  command = plan
+  variables {
+    runner_mode          = "github-oidc"
+    lambda_in_vpc        = true
+    vpc_cidr             = "10.99.0.0/24"
+    private_subnet_cidrs = ["10.99.0.0/25", "10.99.0.128/25"]
+    private_network = {
+      transit_gateway_id = "tgw-0123456789abcdef0"
+      internal_cidrs     = ["10.0.0.0/8"]
+    }
+  }
+  assert {
+    condition     = [for s in aws_subnet.private : s.cidr_block] == ["10.99.0.0/25", "10.99.0.128/25"]
+    error_message = "Private subnets must use the CIDRs IT hands out."
+  }
+  assert {
+    condition     = length(aws_ec2_transit_gateway_vpc_attachment.work) == 1 && length(aws_networkmanager_vpc_attachment.work) == 0
+    error_message = "A transit_gateway_id must create exactly one Transit Gateway attachment."
+  }
+  assert {
+    condition     = [for r in aws_route.work : r.destination_cidr_block] == ["10.0.0.0/8"]
+    error_message = "Only the internal ranges given may be routed to work's network."
+  }
+  assert {
+    condition     = alltrue([for r in aws_route.work : r.transit_gateway_id == "tgw-0123456789abcdef0"])
+    error_message = "Routes must point at the Transit Gateway."
+  }
+}
+
+run "cloud_wan_route_uses_the_core_network" {
+  command = plan
+  variables {
+    runner_mode = "github-oidc"
+    private_network = {
+      core_network_arn = "arn:aws:networkmanager::111111111111:core-network/core-network-0abc123"
+      internal_cidrs   = ["10.0.0.0/8", "192.168.0.0/16"]
+    }
+  }
+  assert {
+    condition     = length(aws_networkmanager_vpc_attachment.work) == 1 && aws_networkmanager_vpc_attachment.work[0].core_network_id == "core-network-0abc123"
+    error_message = "A core_network_arn must create one Cloud WAN attachment to that core network."
+  }
+  assert {
+    condition     = length(aws_ec2_transit_gateway_vpc_attachment.work) == 0
+    error_message = "Cloud WAN mode must not create a Transit Gateway attachment."
+  }
+  assert {
+    condition     = alltrue([for r in aws_route.work : r.core_network_arn == "arn:aws:networkmanager::111111111111:core-network/core-network-0abc123"])
+    error_message = "Routes must point at the core network."
+  }
+}
+
+run "private_route_refuses_a_default_route" {
+  command = plan
+  variables {
+    runner_mode = "github-oidc"
+    private_network = {
+      transit_gateway_id = "tgw-0123456789abcdef0"
+      internal_cidrs     = ["10.0.0.0/8", "0.0.0.0/0"]
+    }
+  }
+  expect_failures = [var.private_network]
+}
+
+run "private_route_refuses_public_ranges" {
+  command = plan
+  variables {
+    runner_mode = "github-oidc"
+    private_network = {
+      transit_gateway_id = "tgw-0123456789abcdef0"
+      internal_cidrs     = ["8.8.8.0/24"]
+    }
+  }
+  expect_failures = [var.private_network]
+}
+
+run "private_route_needs_exactly_one_target" {
+  command = plan
+  variables {
+    runner_mode = "github-oidc"
+    private_network = {
+      transit_gateway_id = "tgw-0123456789abcdef0"
+      core_network_arn   = "arn:aws:networkmanager::111111111111:core-network/core-network-0abc123"
+      internal_cidrs     = ["10.0.0.0/8"]
+    }
+  }
+  expect_failures = [var.private_network]
 }

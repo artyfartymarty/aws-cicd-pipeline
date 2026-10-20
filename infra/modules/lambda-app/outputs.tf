@@ -29,3 +29,7 @@ output "s3_object_version" {
 output "in_vpc" {
   value = length(var.subnet_ids) > 0
 }
+
+output "point_in_time_recovery" {
+  value = aws_dynamodb_table.items.point_in_time_recovery[0].enabled
+}

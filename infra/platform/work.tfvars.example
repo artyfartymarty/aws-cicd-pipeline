@@ -17,3 +17,17 @@ bitbucket_deployment_uuids = {
   prod = "{<prod-environment-uuid>}"
 }
 # create_oidc_provider = false   # if IT already created this workspace's Bitbucket OIDC provider
+
+# Network range: use the one Enterprise Networks allocates (pending), so it
+# doesn't overlap work's internal network. A /24 is enough for two subnets.
+# vpc_cidr             = "<sandbox-cidr-from-enterprise-networks>"
+# private_subnet_cidrs = ["<first-half>", "<second-half>"]
+
+# Optional route from work's network (Tools account runners, on-prem). Off until
+# Enterprise Networks confirms the route domain has no path to the internet.
+# Set one of transit_gateway_id (today) or core_network_arn (Cloud WAN, after
+# the migration). internal_cidrs must be private ranges; never 0.0.0.0/0.
+# private_network = {
+#   transit_gateway_id = "<tgw-id shared by Enterprise Networks>"
+#   internal_cidrs     = ["10.0.0.0/8"]
+# }
