@@ -8,7 +8,7 @@ Back to [[00 Home]]. From [[Mapping]], most useful first.
 > [!important] Day-one scope (Brian, 2026-10-17)
 > The first goal in the Yield sandbox is one green **deploy-to-dev** from Bitbucket. Items 2, 3 and 5 wait until that works.
 
-1. ~~**Decide the runner shape**~~ **Decided 2026-10-17:** OIDC with hosted runners for the sandbox ([[Runners]]). A tools-account runner stays optional practice.
+1. **Runner shape**: hosted runners + OIDC for day one (assumed default, Q8). Work's Tools-account runners over a private route are built but off; turn on `private_network` once Enterprise Networks confirms the CIDR and that the route domain has no internet path ([[Runners]]).
 2. **Split the layers into repos**: `tofu-modules` (Layer 1, tagged `v1.x.x-rc` then `v1.x.x`) and `pipeline-templates` (Layer 2, tagged `v1`). Pin them from the pattern repo.
 3. **Scaffolder**: mark the pattern repo as a GitHub template repository and add a `scripts/new-pattern.sh` that creates the repo, runs `make gh-vars`, and writes the env config. That's the Autobahn form.
 4. ~~**A `test` environment**~~ **Done 2026-10-20:** `qa`, deployed by the release PR ([[Branching and releases]]).

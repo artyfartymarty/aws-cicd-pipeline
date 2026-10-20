@@ -16,6 +16,7 @@ flowchart TB
   scp -. denies .-> x4[Lambda outside a VPC, public Lambda URLs]
   scp -. denies .-> x5[IAM users and access keys]
   scp -. denies .-> x6[3rd-party PrivateLink, RAM shares, Lattice, Cloud WAN]
+  scp -. allows only IT's network role .-> att[Attachment to work's<br/>Transit Gateway / Cloud WAN]
   scp -. denies .-> x7[Billing, purchases, CloudTrail/Config tampering]
   rcp[RCP: only org principals<br/>can assume roles] --> acct
   it[IT applies infra/platform] --> pipe[Pipeline roles + per-env boundaries<br/>team cannot edit]
@@ -26,7 +27,7 @@ Honest limits are in `sandbox-guardrails/README.md`. The main one: dev and prod 
 
 **Who applies what (Brian, 2026-10-17):** IT applies `infra/platform`, not the team. That is what keeps the pipeline roles out of the team's reach.
 
-**Pending (2026-10-19):** if IT attaches the sandbox VPC to work's Transit Gateway, the SCP's Transit Gateway deny needs an exception for IT's attachment only. See [[Runners]].
+**Attachment exception (built 2026-10-20, unused until the route is turned on):** the SCP lets only IT's network role accept the Transit Gateway or Cloud WAN share and create the attachment (`OnlyItConnectsToWorkNetwork`). The team can still edit its route tables, so the real guard against a default route is work's route domain having no internet path. That is pending with Enterprise Networks. See [[Runners]].
 
 The team can still build VPCs, subnets, security groups and VPC endpoints, and create IAM roles named `yield-*`.
 

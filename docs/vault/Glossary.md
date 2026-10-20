@@ -19,6 +19,10 @@ _Avoid_: production (on its own), live
 The shared, once-per-account layer: pipeline roles, OIDC provider, boundaries, buckets. IT applies it, never the team.
 _Avoid_: bootstrap, base stack
 
+**Work network route**:
+An optional private path from work's internal network (Tools account runners, on-prem) into the sandbox's private subnets. It carries traffic, never credentials and never a route to the internet.
+_Avoid_: VPN, peering, the TGW (Transit Gateway is today's mechanism, Cloud WAN the next)
+
 ## Promotion
 
 **Build**:

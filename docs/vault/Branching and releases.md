@@ -22,7 +22,7 @@ flowchart LR
 - Opening or updating the release PR **deploys QA** with `dev`'s tip (`qa.yml`; Bitbucket: the `pull-requests: dev` pipeline). New merges into `dev` while it's open redeploy QA, so QA always runs what the merge would ship. Test there before merging. QA was a coworker's suggestion (2026-10-20); Brian chose "QA on the release PR" over a separate `qa` branch, which would add a second release PR to every change.
 - Merging the release PR **deploys prod** with the build `dev` and QA already ran, then tags the next version. The gates: the prod role trusts only `main`, the merger must be in `PROD_APPROVERS`, and `release-sha.sh` refuses anything on `main` that isn't a merge from `dev`.
 - Open or update the release PR **after** the dev pipeline for `dev`'s tip is green, or QA won't find the build (re-run the QA job if so).
-- **Rollback**: run Roll back prod (GitHub) or `rollback-prod` (Bitbucket) on `main` with the `Build:` SHA from an older release.
+- **Rollback**: run Roll back prod (GitHub) or `rollback-prod` (Bitbucket) on `main` with the `Build:` SHA from an older release. It is **code-only**: the old Lambda zip comes back, but infra comes from today's `main`, so a bad infra change is undone with `git revert` plus a release. Bad data in the prod table is undone with point-in-time recovery, which is on for prod only (Q6, assumed default 2026-10-20, pending Brian's yes).
 
 ## Build once
 The release merge commit has a new SHA but the same files as `dev`'s tip. Prod deploys `builds/<dev tip>/app.zip`, the exact zip that ran in dev and QA, not a rebuild. `check-prod.sh` accepts a SHA only if it was `main`'s tip or `dev`'s tip at a release merge, so a commit in the middle of `dev` can't go to prod on its own.
